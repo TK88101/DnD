@@ -867,28 +867,46 @@ const BGM_MAP = {
 let ytPlayer = null;
 let bgmPlaying = false;
 let currentBGM = '';
+let bgmAvailable = false;
 
-// 載入 YouTube IFrame API
+// 載入 YouTube IFrame API（5 秒超時 fallback）
+let ytLoaded = false;
+const ytTimeout = setTimeout(() => {
+  if (!ytLoaded) {
+    document.getElementById('bgm-title').textContent = 'BGM: 無法連線（YouTube 不可用）';
+    document.getElementById('bgm-toggle').disabled = true;
+  }
+}, 5000);
+
 const ytScript = document.createElement('script');
 ytScript.src = 'https://www.youtube.com/iframe_api';
+ytScript.onerror = function() {
+  clearTimeout(ytTimeout);
+  document.getElementById('bgm-title').textContent = 'BGM: 無法連線';
+  document.getElementById('bgm-toggle').disabled = true;
+};
 document.head.appendChild(ytScript);
 
 window.onYouTubeIframeAPIReady = function() {
+  ytLoaded = true;
+  clearTimeout(ytTimeout);
   ytPlayer = new YT.Player('yt-player', {
     height: '1', width: '1',
     playerVars: { autoplay: 0, controls: 0, loop: 1 },
     events: {
+      onReady: function() { bgmAvailable = true; },
       onStateChange: function(e) {
-        if (e.data === YT.PlayerState.ENDED) {
-          ytPlayer.playVideo(); // 循環播放
-        }
+        if (e.data === YT.PlayerState.ENDED) ytPlayer.playVideo();
+      },
+      onError: function() {
+        document.getElementById('bgm-title').textContent = 'BGM: 播放失敗';
       }
     }
   });
 };
 
 function bgmPlay(key) {
-  if (!ytPlayer || !ytPlayer.loadVideoById) return;
+  if (!bgmAvailable) return;
   const entry = BGM_MAP[key];
   if (!entry || currentBGM === key) return;
   currentBGM = key;
@@ -900,7 +918,7 @@ function bgmPlay(key) {
 }
 
 function bgmToggle() {
-  if (!ytPlayer || !ytPlayer.getPlayerState) return;
+  if (!bgmAvailable) return;
   if (bgmPlaying) {
     ytPlayer.pauseVideo();
     bgmPlaying = false;
@@ -913,20 +931,16 @@ function bgmToggle() {
 }
 
 function bgmSetVol(v) {
-  if (ytPlayer && ytPlayer.setVolume) ytPlayer.setVolume(parseInt(v));
+  if (bgmAvailable) ytPlayer.setVolume(parseInt(v));
 }
 
 // 偵測遊戲輸出中的場景關鍵字，自動切換 BGM
 function bgmDetect(text) {
-  if (!text) return;
+  if (!bgmAvailable || !text) return;
   for (const key of Object.keys(BGM_MAP)) {
-    if (text.includes(key)) {
-      bgmPlay(key);
-      return;
-    }
+    if (text.includes(key)) { bgmPlay(key); return; }
   }
 }
 </script>
-<script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
