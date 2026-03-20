@@ -157,7 +157,11 @@ ${systemPrompt}`
       });
       this.chat = model.startChat({ history: this.history });
     }
-    const result = await this.chat.sendMessage(message);
+    // 30 秒超時保護
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Gemini API 超時（30秒）')), 30000)
+    );
+    const result = await Promise.race([this.chat.sendMessage(message), timeoutPromise]);
     let text = result.response.text();
     // Gemini SDK 的 sendMessage 已自動將 user/model 追加到 this.history（共享引用）
     // 不需要手動 push，否則會重複
