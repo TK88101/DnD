@@ -376,6 +376,17 @@ wss.on('connection', (ws) => {
               gameSessions.set(roomId, new GameSession(roomId));
             }
             const session = gameSessions.get(roomId);
+
+            // 檢測戰役選擇並載入對應文件
+            if (!session.campaign) {
+              const campaignMap = { '1': 'warcraft', '2': 'cthulhu', '3': 'bloodborne' };
+              const selectedCampaign = campaignMap[actionTrimmed];
+              if (selectedCampaign) {
+                await session.init(selectedCampaign);
+                console.log(`[戰役] 載入 ${selectedCampaign} 戰役文件`);
+              }
+            }
+
             const prompt = `[玩家 ${senderName}]: ${actionTrimmed}`;
 
             console.log(`[收到] 房間 ${roomId} — ${senderName}: ${actionTrimmed}`);
