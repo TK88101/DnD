@@ -153,6 +153,7 @@ class GameSession {
     this.history = [];
     this.chat = null;
     this.gameState = null; // 外掛記憶體
+    this.lastOptions = {}; // 上次回覆的選項映射 { "1": "攻擊大兇豺龍", "2": "使用物品", ... }
     this.saveData = null;
   }
 
@@ -238,6 +239,15 @@ ${systemPrompt}`
       });
       this.chat = model.startChat({ history: this.history });
     }
+    // 玩家輸入數字 → 查表轉換成明確文字指令（防止 Gemini 搞混編號）
+    const playerInputMatch = message.match(/\[玩家 .+?\]: (\d+)$/);
+    if (playerInputMatch && this.lastOptions[playerInputMatch[1]]) {
+      const num = playerInputMatch[1];
+      const optionText = this.lastOptions[num];
+      message = message.replace(/: \d+$/, `: ${num}（即：${optionText}）`);
+      console.log(`[選項轉換] ${num} → ${optionText}`);
+    }
+
     // 注入外掛記憶體（含難度倍率）
     const stateCtx = this.getStateContext(this._playerCount || 1);
     if (stateCtx) message = stateCtx + '\n' + message;
@@ -312,6 +322,16 @@ ${systemPrompt}`
     if (nameMatch) state.name = nameMatch[1];
 
     this.gameState = state;
+
+    // 提取選項列表供下次輸入查表
+    const options = {};
+    const optionMatches = text.matchAll(/^\s*(\d+)[\.\、]\s*(.+)/gm);
+    for (const m of optionMatches) {
+      options[m[1]] = m[2].trim();
+    }
+    if (Object.keys(options).length > 0) {
+      this.lastOptions = options;
+    }
   }
 
   // 動態難度計算（代碼強制，不依賴 AI）
