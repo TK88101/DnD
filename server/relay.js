@@ -103,6 +103,7 @@ wss.on('connection', (ws) => {
         });
         ws.roomId = roomId;
         ws.isHost = true;
+        ws.playerName = msg.playerName || null;
         ws.send(JSON.stringify({ type: 'room_created', roomId }));
         console.log(`[房間] ${roomId} 已創建`);
         break;
@@ -153,22 +154,26 @@ wss.on('connection', (ws) => {
 
       // === 玩家發送行動 ===
       case 'player_action': {
-        if (!ws.roomId || !ws.playerName) return;
+        if (!ws.roomId) return;
 
+        // 主機或玩家都可以發送行動
+        const senderName = ws.playerName || msg.playerName || '主機';
         writeInbox(ws.roomId, {
-          from: ws.playerName,
+          from: senderName,
           action: msg.action,
           timestamp: Date.now()
         });
 
-        // 也通知主機
-        const actionRoom = rooms.get(ws.roomId);
-        if (actionRoom && actionRoom.host && actionRoom.host.readyState === WebSocket.OPEN) {
-          actionRoom.host.send(JSON.stringify({
-            type: 'player_action',
-            from: ws.playerName,
-            action: msg.action
-          }));
+        // 如果是玩家發送的，通知主機
+        if (!ws.isHost) {
+          const actionRoom = rooms.get(ws.roomId);
+          if (actionRoom && actionRoom.host && actionRoom.host.readyState === WebSocket.OPEN) {
+            actionRoom.host.send(JSON.stringify({
+              type: 'player_action',
+              from: senderName,
+              action: msg.action
+            }));
+          }
         }
         break;
       }

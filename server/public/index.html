@@ -115,6 +115,28 @@
   }
   #login button:hover { background: #2ea043; }
   #login .err { color: #f85149; font-size: 13px; min-height: 20px; }
+  .mode-btn {
+    background: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    padding: 10px 20px;
+    margin: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 4px;
+    width: 260px;
+  }
+  .mode-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+  #login .room-info {
+    color: #7ee787;
+    font-size: 15px;
+    margin: 12px 0;
+    padding: 8px 16px;
+    border: 1px solid #238636;
+    border-radius: 4px;
+    background: #0d1117;
+  }
 
   /* === 老闆鍵畫面 === */
   #boss {
@@ -157,10 +179,21 @@
 <!-- 登入 -->
 <div id="login">
   <div class="logo">$ ssh dnd-server --connect</div>
-  <input id="f-name" placeholder="你的名字" autofocus />
-  <input id="f-room" placeholder="房間號（6位數字）" />
-  <input id="f-pass" type="password" placeholder="密碼" />
-  <button onclick="join()">連線</button>
+  <div id="mode-select">
+    <button class="mode-btn" onclick="showCreate()">創建房間（主機）</button>
+    <button class="mode-btn" onclick="showJoin()">加入房間（玩家）</button>
+  </div>
+  <div id="create-form" style="display:none;">
+    <input id="f-host-name" placeholder="你的名字" />
+    <input id="f-host-pass" type="password" placeholder="設定房間密碼" />
+    <button onclick="createRoom()">創建</button>
+  </div>
+  <div id="join-form" style="display:none;">
+    <input id="f-name" placeholder="你的名字" />
+    <input id="f-room" placeholder="房間號（6位數字）" />
+    <input id="f-pass" type="password" placeholder="密碼" />
+    <button onclick="join()">連線</button>
+  </div>
   <div class="err" id="err"></div>
 </div>
 
@@ -243,6 +276,77 @@
 let ws = null;
 let bossMode = false;
 let myName = '';
+let isHost = false;
+
+// === 模式切換 ===
+function showCreate() {
+  document.getElementById('mode-select').style.display = 'none';
+  document.getElementById('create-form').style.display = 'flex';
+  document.getElementById('f-host-name').focus();
+}
+function showJoin() {
+  document.getElementById('mode-select').style.display = 'none';
+  document.getElementById('join-form').style.display = 'flex';
+  document.getElementById('f-name').focus();
+}
+
+// === 創建房間 ===
+function createRoom() {
+  const name = document.getElementById('f-host-name').value.trim();
+  const password = document.getElementById('f-host-pass').value.trim();
+  const err = document.getElementById('err');
+
+  if (!name || !password) { err.textContent = '請填寫名字和密碼'; return; }
+
+  myName = name;
+  isHost = true;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'create_room', password, playerName: name }));
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    switch (msg.type) {
+      case 'room_created':
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('game').style.display = 'flex';
+        document.getElementById('ps1').textContent = myName + ' $';
+        out('<span class="d">$ node --inspect app.js</span>');
+        out('<span class="d">Debugger listening on ws://127.0.0.1:9229/a1b2c3d4</span>');
+        out('<span class="g">房間已創建！</span>');
+        out('<span class="w">房間號: ' + msg.roomId + '</span>');
+        out('<span class="d">將房間號和密碼分享給朋友即可加入</span>');
+        out('<span class="d">提示：按 Esc 鍵切換偽裝畫面（老闆鍵）</span>');
+        out('');
+        out('<span class="c">等待玩家加入中...</span>');
+        out('<span class="d">在 Claude Code 中輸入：多人模式，房間號 ' + msg.roomId + '</span>');
+        out('');
+        document.getElementById('cmd').focus();
+        break;
+      case 'error':
+        err.textContent = msg.message;
+        break;
+      case 'player_joined':
+        out('<span class="g">+ ' + msg.playerName + ' 加入了遊戲</span>');
+        break;
+      case 'player_left':
+        out('<span class="y">- ' + msg.playerName + ' 離開了遊戲</span>');
+        break;
+      case 'player_action':
+        out('<span class="b">[' + msg.from + ']</span> ' + msg.action);
+        break;
+      case 'game_output':
+        outLines(msg.content);
+        break;
+    }
+  };
+
+  ws.onerror = () => { err.textContent = '連線失敗'; };
+  ws.onclose = () => { out('<span class="r">連線已中斷</span>'); };
+}
 
 // === 老闆鍵 ===
 document.addEventListener('keydown', e => {
