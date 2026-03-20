@@ -85,6 +85,7 @@ class GameSession {
     this.campaign = null;
     this.history = [];
     this.chat = null;
+    this.gameState = null; // 外掛記憶體
     this.saveData = null;
   }
 
@@ -158,6 +159,10 @@ ${systemPrompt}`
       });
       this.chat = model.startChat({ history: this.history });
     }
+    // 注入外掛記憶體
+    const stateCtx = this.getStateContext();
+    if (stateCtx) message = stateCtx + '\n' + message;
+
     // 30 秒超時保護
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Gemini API 超時（30秒）')), 30000)
@@ -169,51 +174,87 @@ ${systemPrompt}`
 
     // 後處理：確保回覆包含編號選項（Gemini 經常忘記）
     text = ensureOptions(text);
+
+    // 從回覆中解析遊戲狀態，更新外掛記憶體
+    this.parseState(text);
+
+    // 裁剪歷史：只保留最近 10 輪對話（20 條 message）
+    const MAX_MESSAGES = 20;
+    if (this.history.length > MAX_MESSAGES + 2) {
+      const first = this.history.slice(0, 2); // 角色創建資訊
+      const recent = this.history.slice(-MAX_MESSAGES);
+      this.history.length = 0;
+      this.history.push(...first, ...recent);
+    }
+
     return text;
   }
 
-  // 歷史壓縮：超過 40 條對話時，把舊的壓縮成摘要
-  async compressHistory() {
-    const MAX_HISTORY = 40;
-    if (this.history.length <= MAX_HISTORY) return;
+  // 從 Gemini 回覆中解析狀態欄，更新外掛記憶體
+  parseState(text) {
+    if (!text) return;
+    const state = this.gameState || {};
 
-    const keepFirst = this.history.slice(0, 2);   // 角色創建資訊
-    const keepRecent = this.history.slice(-20);    // 最近 20 條保留完整
-    const toSummarize = this.history.slice(2, -20); // 中間部分壓縮
+    const hpMatch = text.match(/HP:\s*(\d+)\/(\d+)/);
+    if (hpMatch) { state.hp = hpMatch[1]; state.maxHp = hpMatch[2]; }
 
-    // 提取要壓縮的文字
-    const summaryText = toSummarize.map(h => {
-      const role = h.role === 'user' ? '玩家' : 'DM';
-      const text = h.parts[0].text.substring(0, 200); // 每條截取前 200 字
-      return `[${role}] ${text}`;
-    }).join('\n');
+    const acMatch = text.match(/AC:\s*(\d+)/);
+    if (acMatch) state.ac = acMatch[1];
 
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const result = await model.generateContent(
-        `請用300字以內總結以下遊戲歷程。必須包含：當前角色狀態（HP、等級、裝備、金幣、物品）、已完成的任務、進行中的任務、重要事件。只輸出摘要，不要加任何前綴。\n\n${summaryText}`
-      );
-      const summary = result.response.text();
+    const goldMatch = text.match(/💰\s*(\d+)g/);
+    if (goldMatch) state.gold = goldMatch[1];
 
-      this.history = [
-        ...keepFirst,
-        { role: 'user', parts: [{ text: `[系統] 以下是之前冒險進度的摘要：\n${summary}` }] },
-        { role: 'model', parts: [{ text: '收到，我已了解之前的冒險進度。繼續遊戲。' }] },
-        ...keepRecent
-      ];
+    const expMatch = text.match(/EXP:\s*([\d,]+)\/([\d,]+)/);
+    if (expMatch) { state.exp = expMatch[1]; state.expNext = expMatch[2]; }
 
-      // 重建 chat session
-      await this.init(this.campaign);
+    const locMatch = text.match(/📍\s*(.+)/);
+    if (locMatch) state.location = locMatch[1].trim();
 
-      console.log(`[壓縮] 歷史從 ${keepFirst.length + toSummarize.length + keepRecent.length} 條壓縮為 ${this.history.length} 條`);
-    } catch (err) {
-      console.error(`[壓縮失敗] ${err.message}，保留原始歷史`);
-    }
+    const itemMatch = text.match(/物品：(.+)/);
+    if (itemMatch) state.items = itemMatch[1].trim();
+
+    const equipMatch = text.match(/裝備：(.+)/);
+    if (equipMatch) state.equipment = equipMatch[1].trim();
+
+    const cartMatch = text.match(/力盡次數：(\d+)\/3/);
+    if (cartMatch) state.cartCount = cartMatch[1];
+
+    const lvMatch = text.match(/Lv(\d+)/);
+    if (lvMatch) state.level = lvMatch[1];
+
+    const weaponMatch = text.match(/\[(.+?)\s+Lv/);
+    if (weaponMatch) state.weapon = weaponMatch[1];
+
+    const nameMatch = text.match(/👤\s*(.+?)\s*\[/);
+    if (nameMatch) state.name = nameMatch[1];
+
+    this.gameState = state;
   }
 
-  // 保存遊戲（對話歷史 + 戰役信息）
+  // 生成記憶體注入文字
+  getStateContext() {
+    const s = this.gameState;
+    if (!s || !s.name) return '';
+    let ctx = `[系統記憶 — 當前遊戲狀態，以此為準]\n`;
+    ctx += `角色：${s.name}，${s.weapon || '未知'} Lv${s.level || 1}\n`;
+    ctx += `HP: ${s.hp || '?'}/${s.maxHp || '?'} | AC: ${s.ac || '?'}\n`;
+    ctx += `金幣: ${s.gold || 0}g | EXP: ${s.exp || 0}/${s.expNext || 300}\n`;
+    if (s.equipment) ctx += `裝備: ${s.equipment}\n`;
+    if (s.items) ctx += `物品: ${s.items}\n`;
+    if (s.location) ctx += `位置: ${s.location}\n`;
+    if (s.cartCount) ctx += `力盡次數: ${s.cartCount}/3\n`;
+    return ctx;
+  }
+
+  // 保存遊戲（對話歷史 + 戰役信息 + 外掛記憶體）
   async save(playerName) {
-    await this.compressHistory(); // 保存前自動壓縮
+    // 裁剪歷史到合理大小（保留前2條 + 最近20條）
+    if (this.history.length > 22) {
+      const first = this.history.slice(0, 2);
+      const recent = this.history.slice(-20);
+      this.history.length = 0;
+      this.history.push(...first, ...recent);
+    }
     const savePath = path.join(GAME_DIR, 'saves', `${playerName}.json`);
     const data = {
       meta: {
@@ -222,7 +263,8 @@ ${systemPrompt}`
         roomId: this.roomId,
         saved_at: new Date().toISOString(),
       },
-      history: this.history
+      history: this.history,
+      gameState: this.gameState
     };
     fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
     return savePath;
@@ -236,13 +278,13 @@ ${systemPrompt}`
     const session = new GameSession(data.meta.roomId);
     session.campaign = data.meta.campaign;
     session.history = data.history;
-    await session.init(data.meta.campaign);
-    // 用保存的歷史重建對話
-    session.chat = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: session.chat ? undefined : ''
-    }).startChat({ history: data.history });
-    // 重新初始化帶完整系統提示
+    session.gameState = data.gameState || null; // 讀取外掛記憶體
+    // 裁剪舊歷史（如果存檔很大）
+    if (session.history.length > 22) {
+      const first = session.history.slice(0, 2);
+      const recent = session.history.slice(-20);
+      session.history = [...first, ...recent];
+    }
     await session.init(data.meta.campaign);
     return session;
   }
