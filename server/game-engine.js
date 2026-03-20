@@ -84,9 +84,10 @@ function proficiencyBonus(level) {
 
 // === 角色創建狀態機 ===
 class CharacterCreator {
-  constructor(playerName, campaign) {
+  constructor(playerName, campaign, lockedFaction = null) {
     this.playerName = playerName;
     this.campaign = campaign;
+    this.lockedFaction = lockedFaction; // 陣營鎖定（第一位玩家選種族後鎖定）
     this.step = 'race'; // race → class → stats → name → done
     this.race = null;
     this.raceData = null;
@@ -110,11 +111,25 @@ class CharacterCreator {
     const races = RACES[this.campaign];
     if (!races) return { text: '⚠ 未知戰役', done: false };
 
-    const raceData = races[input.trim()];
+    // 根據陣營鎖定過濾可選種族
+    let availableRaces = races;
+    if (this.lockedFaction) {
+      availableRaces = {};
+      for (const [id, r] of Object.entries(races)) {
+        if (r.faction === this.lockedFaction) {
+          availableRaces[id] = r;
+        }
+      }
+    }
+
+    const raceData = availableRaces[input.trim()];
     if (!raceData) {
       let list = '═══════════════════════════════════════\n選擇你的種族：\n───────────────────────────────────────\n';
+      if (this.lockedFaction) {
+        list = `═══════════════════════════════════════\n陣營已鎖定為【${this.lockedFaction}】\n選擇你的種族：\n───────────────────────────────────────\n`;
+      }
       const factions = {};
-      for (const [id, r] of Object.entries(races)) {
+      for (const [id, r] of Object.entries(availableRaces)) {
         if (!factions[r.faction]) factions[r.faction] = [];
         factions[r.faction].push({ id, ...r });
       }

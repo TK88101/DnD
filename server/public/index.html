@@ -350,6 +350,94 @@ let bossMode = false;
 let myName = '';
 let isHost = false;
 
+// 重連相關狀態
+let reconnectAttempts = 0;
+const MAX_RECONNECT = 5;
+const RECONNECT_DELAY = 3000;
+let reconnectTimer = null;
+let heartbeatTimer = null;
+let savedRoomId = '';
+let savedPassword = '';
+let intentionalClose = false;
+let isMyTurn = true; // 角色創建期間默認可輸入
+
+function handleTurnInfo(currentPlayer) {
+  isMyTurn = (currentPlayer === myName || currentPlayer === '__all__');
+  const cmd = document.getElementById('cmd');
+  if (isMyTurn) {
+    cmd.disabled = false;
+    cmd.placeholder = currentPlayer === '__all__' ? '所有人可輸入...' : '輪到你了！輸入行動...';
+    cmd.focus();
+  } else {
+    cmd.disabled = true;
+    cmd.placeholder = `等待 ${currentPlayer} 行動...`;
+  }
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, 25000);
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+function attemptReconnect() {
+  if (intentionalClose || reconnectAttempts >= MAX_RECONNECT) {
+    if (reconnectAttempts >= MAX_RECONNECT) {
+      out('<span class="r">重連失敗，已達最大重試次數</span>');
+    }
+    return;
+  }
+  reconnectAttempts++;
+  out('<span class="y">嘗試重連... (' + reconnectAttempts + '/' + MAX_RECONNECT + ')</span>');
+  reconnectTimer = setTimeout(() => {
+    if (isHost) {
+      reconnectAsHost();
+    } else {
+      reconnectAsPlayer();
+    }
+  }, RECONNECT_DELAY);
+}
+
+function reconnectAsHost() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'create_room', password: savedPassword, playerName: myName, roomId: savedRoomId }));
+    startHeartbeat();
+  };
+  ws.onmessage = hostMessageHandler;
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    stopHeartbeat();
+    if (!intentionalClose) attemptReconnect();
+  };
+}
+
+function reconnectAsPlayer() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'join_room', roomId: savedRoomId, password: savedPassword, playerName: myName }));
+    startHeartbeat();
+  };
+  ws.onmessage = playerMessageHandler;
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    stopHeartbeat();
+    if (!intentionalClose) attemptReconnect();
+  };
+}
+
 // === 模式切換 ===
 function showCreate() {
   document.getElementById('mode-select').style.display = 'none';
@@ -360,6 +448,75 @@ function showJoin() {
   document.getElementById('mode-select').style.display = 'none';
   document.getElementById('join-form').style.display = 'flex';
   document.getElementById('f-name').focus();
+}
+
+// === 主機消息處理器 ===
+function hostMessageHandler(e) {
+  const msg = JSON.parse(e.data);
+  const err = document.getElementById('err');
+  switch (msg.type) {
+    case 'room_created':
+      savedRoomId = msg.roomId;
+      reconnectAttempts = 0;
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('game').style.display = 'flex';
+      document.getElementById('ps1').textContent = myName + ' $';
+      if (reconnectAttempts === 0 && !document.querySelector('#terminal div')) {
+        out('<span class="d">$ node --inspect app.js</span>');
+        out('<span class="d">Debugger listening on ws://127.0.0.1:9229/a1b2c3d4</span>');
+        out('<span class="g">房間已創建！</span>');
+        out('<span class="w">房間號: ' + msg.roomId + '</span>');
+        out('<span class="d">將房間號和密碼分享給朋友即可加入</span>');
+        out('<span class="d">提示：按 Esc 鍵切換偽裝畫面（老闆鍵）</span>');
+        out('');
+        out('<span class="c">等待玩家加入中...</span>');
+        out('<span class="d">在 Claude Code 中輸入：多人模式，房間號 ' + msg.roomId + '</span>');
+        out('');
+      } else {
+        out('<span class="g">重連成功！</span>');
+      }
+      document.getElementById('cmd').focus();
+      break;
+    case 'error':
+      if (document.getElementById('game').style.display === 'flex') {
+        out('<span class="r">⚠ ' + msg.message + '</span>');
+      } else if (err) {
+        err.textContent = msg.message;
+      }
+      break;
+    case 'player_joined':
+      chatOut('<span class="g">+ ' + msg.playerName + ' 加入了遊戲</span>');
+      break;
+    case 'player_left':
+      chatOut('<span class="y">- ' + msg.playerName + ' 離開了遊戲</span>');
+      break;
+    case 'player_action':
+      chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.action);
+      break;
+    case 'chat':
+      if (msg.isAction) {
+        chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+      } else {
+        chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
+      }
+      break;
+    case 'game_thinking':
+      document.querySelectorAll('.thinking').forEach(el => el.remove());
+      out('<span class="thinking d">DM 思考中...</span>');
+      break;
+    case 'game_output':
+      document.querySelectorAll('.thinking').forEach(el => el.remove());
+      outLines(msg.content);
+      break;
+    case 'turn_info':
+      handleTurnInfo(msg.currentPlayer);
+      break;
+    case 'host_disconnected':
+      out('<span class="y">⚠ ' + msg.message + '</span>');
+      break;
+    case 'pong':
+      break;
+  }
 }
 
 // === 創建房間 ===
@@ -374,66 +531,26 @@ function createRoom() {
 
   myName = name;
   isHost = true;
+  savedPassword = password;
+  intentionalClose = false;
+  reconnectAttempts = 0;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}`);
 
   ws.onopen = () => {
     ws.send(JSON.stringify({ type: 'create_room', password, playerName: name, roomId: customRoom || null }));
+    startHeartbeat();
   };
 
-  ws.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    switch (msg.type) {
-      case 'room_created':
-        document.getElementById('login').style.display = 'none';
-        document.getElementById('game').style.display = 'flex';
-        document.getElementById('ps1').textContent = myName + ' $';
-        out('<span class="d">$ node --inspect app.js</span>');
-        out('<span class="d">Debugger listening on ws://127.0.0.1:9229/a1b2c3d4</span>');
-        out('<span class="g">房間已創建！</span>');
-        out('<span class="w">房間號: ' + msg.roomId + '</span>');
-        out('<span class="d">將房間號和密碼分享給朋友即可加入</span>');
-        out('<span class="d">提示：按 Esc 鍵切換偽裝畫面（老闆鍵）</span>');
-        out('');
-        out('<span class="c">等待玩家加入中...</span>');
-        out('<span class="d">在 Claude Code 中輸入：多人模式，房間號 ' + msg.roomId + '</span>');
-        out('');
-        document.getElementById('cmd').focus();
-        break;
-      case 'error':
-        err.textContent = msg.message;
-        break;
-      case 'player_joined':
-        chatOut('<span class="g">+ ' + msg.playerName + ' 加入了遊戲</span>');
-        break;
-      case 'player_left':
-        chatOut('<span class="y">- ' + msg.playerName + ' 離開了遊戲</span>');
-        break;
-      case 'player_action':
-        chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.action);
-        break;
-      case 'chat':
-        if (msg.isAction) {
-          chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
-        } else {
-          chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
-        }
-        break;
-      case 'game_thinking':
-        // 移除之前的思考提示
-        document.querySelectorAll('.thinking').forEach(el => el.remove());
-        out('<span class="thinking d">DM 思考中...</span>');
-        break;
-      case 'game_output':
-        // 移除思考提示
-        document.querySelectorAll('.thinking').forEach(el => el.remove());
-        outLines(msg.content);
-        break;
+  ws.onmessage = hostMessageHandler;
+  ws.onerror = () => { err.textContent = '連線失敗'; };
+  ws.onclose = () => {
+    stopHeartbeat();
+    if (!intentionalClose && document.getElementById('game').style.display === 'flex') {
+      out('<span class="y">連線中斷，準備重連...</span>');
+      attemptReconnect();
     }
   };
-
-  ws.onerror = () => { err.textContent = '連線失敗'; };
-  ws.onclose = () => { out('<span class="r">連線已中斷</span>'); };
 }
 
 // === 老闆鍵 ===
@@ -487,6 +604,81 @@ function outLines(text) {
   });
 }
 
+// === 玩家消息處理器 ===
+function playerMessageHandler(e) {
+  const msg = JSON.parse(e.data);
+  const err = document.getElementById('err');
+  switch (msg.type) {
+    case 'joined':
+      reconnectAttempts = 0;
+      document.getElementById('login').style.display = 'none';
+      document.getElementById('game').style.display = 'flex';
+      document.getElementById('ps1').textContent = myName + ' $';
+      if (!document.querySelector('#terminal div')) {
+        out('<span class="d">$ node --inspect app.js</span>');
+        out('<span class="d">Debugger listening on ws://127.0.0.1:9229/a1b2c3d4</span>');
+        out('<span class="d">For help, see: https://nodejs.org/en/docs/inspector</span>');
+        out('<span class="g">Connected to session [' + savedRoomId + ']</span>');
+        out('<span class="d">---</span>');
+        out('<span class="c">歡迎，' + myName + '！等待 DM 分配角色...</span>');
+        out('<span class="d">提示：按 Esc 鍵切換偽裝畫面（老闆鍵）</span>');
+        out('');
+      } else {
+        out('<span class="g">重連成功！</span>');
+      }
+      document.getElementById('cmd').focus();
+      break;
+
+    case 'error':
+      if (document.getElementById('game').style.display === 'flex') {
+        out('<span class="r">⚠ ' + msg.message + '</span>');
+      } else if (err) {
+        err.textContent = msg.message;
+      }
+      break;
+
+    case 'game_thinking':
+      document.querySelectorAll('.thinking').forEach(el => el.remove());
+      out('<span class="thinking d">DM 思考中...</span>');
+      break;
+    case 'game_output':
+      document.querySelectorAll('.thinking').forEach(el => el.remove());
+      outLines(msg.content);
+      break;
+
+    case 'chat':
+      if (msg.isAction) {
+        chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+      } else {
+        chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
+      }
+      break;
+
+    case 'host_disconnected':
+      out('<span class="y">⚠ ' + msg.message + '</span>');
+      break;
+
+    case 'kicked':
+      intentionalClose = true;
+      out('<span class="r">⚠ ' + msg.message + '</span>');
+      ws.close();
+      break;
+
+    case 'room_closed':
+      intentionalClose = true;
+      out('<span class="r">⚠ ' + msg.message + '</span>');
+      ws.close();
+      break;
+
+    case 'turn_info':
+      handleTurnInfo(msg.currentPlayer);
+      break;
+
+    case 'pong':
+      break;
+  }
+}
+
 // === 加入房間 ===
 function join() {
   const name = document.getElementById('f-name').value.trim();
@@ -497,71 +689,26 @@ function join() {
   if (!name || !room || !pass) { err.textContent = '請填寫所有欄位'; return; }
 
   myName = name;
+  isHost = false;
+  savedRoomId = room;
+  savedPassword = pass;
+  intentionalClose = false;
+  reconnectAttempts = 0;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}`);
 
   ws.onopen = () => {
     ws.send(JSON.stringify({ type: 'join_room', roomId: room, password: pass, playerName: name }));
+    startHeartbeat();
   };
 
-  ws.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    switch (msg.type) {
-      case 'joined':
-        document.getElementById('login').style.display = 'none';
-        document.getElementById('game').style.display = 'flex';
-        document.getElementById('ps1').textContent = myName + ' $';
-        // 假啟動輸出
-        out('<span class="d">$ node --inspect app.js</span>');
-        out('<span class="d">Debugger listening on ws://127.0.0.1:9229/a1b2c3d4</span>');
-        out('<span class="d">For help, see: https://nodejs.org/en/docs/inspector</span>');
-        out('<span class="g">Connected to session [' + room + ']</span>');
-        out('<span class="d">---</span>');
-        out('<span class="c">歡迎，' + name + '！等待 DM 分配角色...</span>');
-        out('<span class="d">提示：按 Esc 鍵切換偽裝畫面（老闆鍵）</span>');
-        out('');
-        document.getElementById('cmd').focus();
-        break;
-
-      case 'error':
-        err.textContent = msg.message;
-        break;
-
-      case 'game_thinking':
-        // 移除之前的思考提示
-        document.querySelectorAll('.thinking').forEach(el => el.remove());
-        out('<span class="thinking d">DM 思考中...</span>');
-        break;
-      case 'game_output':
-        // 移除思考提示
-        document.querySelectorAll('.thinking').forEach(el => el.remove());
-        outLines(msg.content);
-        break;
-
-      case 'chat':
-        if (msg.isAction) {
-          chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
-        } else {
-          chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
-        }
-        break;
-
-      case 'kicked':
-        out('<span class="r">⚠ ' + msg.message + '</span>');
-        ws.close();
-        break;
-
-      case 'room_closed':
-        out('<span class="r">⚠ ' + msg.message + '</span>');
-        ws.close();
-        break;
-    }
-  };
-
+  ws.onmessage = playerMessageHandler;
   ws.onerror = () => { err.textContent = '連線失敗，請確認服務器已啟動'; };
   ws.onclose = () => {
-    if (document.getElementById('game').style.display === 'flex') {
-      out('<span class="r">連線已中斷</span>');
+    stopHeartbeat();
+    if (!intentionalClose && document.getElementById('game').style.display === 'flex') {
+      out('<span class="y">連線中斷，準備重連...</span>');
+      attemptReconnect();
     }
   };
 }
