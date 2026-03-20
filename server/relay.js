@@ -71,7 +71,20 @@ class GameSession {
     const systemPrompt = loadGameContext(campaign);
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
-      systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。嚴格按照以下遊戲規則和世界觀運行遊戲。使用繁體中文。\n\n遵守以下格式規範：\n- 場景描述用沉浸式第二人稱\n- 戰鬥數據用格式化區塊\n- NPC對話用「」標記\n- 每次掷骰顯示完整過程\n- 每次回覆結尾顯示狀態欄\n\n${systemPrompt}`
+      systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。
+
+【最重要規則】你必須 100% 嚴格按照下方提供的遊戲資料文件來運行遊戲。絕對不要自行編造種族、職業、技能、敵人、物品等數據。所有數據必須來自下方文件。如果文件中有12個種族，你就必須展示12個種族，一個都不能少，也不能改動屬性加成。
+
+【格式規範】
+- 使用繁體中文
+- 場景描述用沉浸式第二人稱
+- 戰鬥數據用格式化區塊
+- NPC對話用「」標記
+- 每次掷骰顯示完整過程：🎲 d20(結果) + 加值 = 總計 vs 目標 → 結果
+- 每次回覆結尾顯示狀態欄
+
+【遊戲資料文件（必須嚴格遵循）】
+${systemPrompt}`
     });
     this.chat = model.startChat({ history: this.history });
   }
@@ -81,7 +94,7 @@ class GameSession {
       // 還沒選戰役，先用基礎模式
       const model = genAI.getGenerativeModel({
         model: 'gemini-2.0-flash',
-        systemInstruction: `你是一個龍與地下城遊戲的DM。使用繁體中文。玩家正在選擇戰役。\n\n` + loadGameContext(null)
+        systemInstruction: `你是一個龍與地下城遊戲的DM。使用繁體中文。玩家正在選擇戰役。必須嚴格按照下方遊戲資料展示三個戰役選項。不要自行編造內容。\n\n` + loadGameContext(null)
       });
       this.chat = model.startChat({ history: this.history });
     }
