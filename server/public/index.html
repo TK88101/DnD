@@ -170,6 +170,19 @@
     min-width: 0;
   }
 
+  /* === BGM 控制面板 === */
+  #bgm-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 28px; background: #161b22; border-top: 1px solid #30363d;
+    display: flex; align-items: center; padding: 0 10px; gap: 8px;
+    font-size: 12px; z-index: 100;
+  }
+  #bgm-bar button { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 14px; }
+  #bgm-bar button:hover { color: #f0f6fc; }
+  #bgm-bar .bgm-title { color: #8b949e; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #bgm-bar input[type=range] { width: 60px; height: 4px; accent-color: #58a6ff; }
+  body { padding-bottom: 28px; }
+
   /* === 聊天框（魔獸風格，右側欄） === */
   #chat-box {
     width: 280px;
@@ -277,6 +290,15 @@
     </div>
   </div>
 </div>
+
+<!-- BGM 控制列 -->
+<div id="bgm-bar">
+  <button id="bgm-toggle" onclick="bgmToggle()">▶</button>
+  <span class="bgm-title" id="bgm-title">BGM: --</span>
+  <input type="range" id="bgm-vol" min="0" max="100" value="30" oninput="bgmSetVol(this.value)">
+  <button onclick="bgmSetVol(0);document.getElementById('bgm-vol').value=0">🔇</button>
+</div>
+<div id="yt-player" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;"></div>
 
 <!-- 老闆鍵 -->
 <div id="boss">
@@ -610,6 +632,7 @@ function getCharColor(name) {
 }
 
 function outLines(text) {
+  bgmDetect(text);
   text.split('\n').forEach(line => {
     const trimmed = line.trim();
     if (!trimmed) { out(''); return; }
@@ -811,6 +834,99 @@ document.querySelectorAll('#login input').forEach(input => {
     if (e.key === 'Enter') join();
   });
 });
+
+// === BGM 系統 ===
+const BGM_MAP = {
+  // 魔獸世界
+  '北郡': { id: 'kELsL8TaXao', title: 'Elwynn Forest' },
+  '暴風城': { id: '9DnYsXKbqSE', title: 'Stormwind' },
+  '西部荒野': { id: 'uLfP8lUjQjw', title: 'Westfall' },
+  '貧瘠之地': { id: 'Do5s0MQvF9s', title: 'The Barrens' },
+  '杜隆塔爾': { id: 'kG0sOHFQ0bE', title: 'Durotar' },
+  '奧格瑞瑪': { id: 'FnfOMDJqyI4', title: 'Orgrimmar' },
+  '銀松森林': { id: 'kUBaZ-bKFRs', title: 'Silverpine Forest' },
+  '瘟疫之地': { id: 'uGploGcCxNU', title: 'Plaguelands' },
+  '影牙城堡': { id: 'u76p06zxJZ0', title: 'Shadowfang Keep' },
+  '死亡礦井': { id: 'rPh8JBRyqJ8', title: 'The Deadmines' },
+  '血色修道院': { id: 'O20VlzmT_xQ', title: 'Scarlet Monastery' },
+  '納克薩瑪斯': { id: 'K1FDswMsRHI', title: 'Naxxramas' },
+  // 怪物獵人
+  '蒼星集落': { id: 'eFVRjpdqJQQ', title: '星辰の行く先 (Astera)' },
+  '古代森林': { id: 'nLJECvYCVtw', title: 'Ancient Forest' },
+  '砂原': { id: 'v7M-SDR1hDc', title: 'Wildspire Waste' },
+  '溶岩洞': { id: 'LLVy5bHG02E', title: 'Elder\'s Recess' },
+  '龍結晶之地': { id: 'LLVy5bHG02E', title: 'Elder\'s Recess' },
+  '淵源之境': { id: 'k2hN1qgxz5Y', title: 'Fatalis Theme' },
+  '滅盡龍': { id: 'k8zJCu4JOCY', title: 'Nergigante Theme' },
+  '炎王龍': { id: 'wl1ao9_IZMA', title: 'Teostra Theme' },
+  '黑龍': { id: 'k2hN1qgxz5Y', title: 'Fatalis Theme' },
+  // 通用
+  '戰鬥': { id: 'CLvCLnlcz-4', title: '英雄の証 (Proof of a Hero)' },
+};
+
+let ytPlayer = null;
+let bgmPlaying = false;
+let currentBGM = '';
+
+// 載入 YouTube IFrame API
+const ytScript = document.createElement('script');
+ytScript.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(ytScript);
+
+window.onYouTubeIframeAPIReady = function() {
+  ytPlayer = new YT.Player('yt-player', {
+    height: '1', width: '1',
+    playerVars: { autoplay: 0, controls: 0, loop: 1 },
+    events: {
+      onStateChange: function(e) {
+        if (e.data === YT.PlayerState.ENDED) {
+          ytPlayer.playVideo(); // 循環播放
+        }
+      }
+    }
+  });
+};
+
+function bgmPlay(key) {
+  if (!ytPlayer || !ytPlayer.loadVideoById) return;
+  const entry = BGM_MAP[key];
+  if (!entry || currentBGM === key) return;
+  currentBGM = key;
+  bgmPlaying = true;
+  ytPlayer.loadVideoById(entry.id);
+  ytPlayer.setVolume(parseInt(document.getElementById('bgm-vol').value));
+  document.getElementById('bgm-title').textContent = '♪ ' + entry.title;
+  document.getElementById('bgm-toggle').textContent = '⏸';
+}
+
+function bgmToggle() {
+  if (!ytPlayer || !ytPlayer.getPlayerState) return;
+  if (bgmPlaying) {
+    ytPlayer.pauseVideo();
+    bgmPlaying = false;
+    document.getElementById('bgm-toggle').textContent = '▶';
+  } else {
+    ytPlayer.playVideo();
+    bgmPlaying = true;
+    document.getElementById('bgm-toggle').textContent = '⏸';
+  }
+}
+
+function bgmSetVol(v) {
+  if (ytPlayer && ytPlayer.setVolume) ytPlayer.setVolume(parseInt(v));
+}
+
+// 偵測遊戲輸出中的場景關鍵字，自動切換 BGM
+function bgmDetect(text) {
+  if (!text) return;
+  for (const key of Object.keys(BGM_MAP)) {
+    if (text.includes(key)) {
+      bgmPlay(key);
+      return;
+    }
+  }
+}
 </script>
+<script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
