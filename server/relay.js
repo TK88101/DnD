@@ -105,6 +105,41 @@ ${systemPrompt}`
     return text;
   }
 
+  // 保存遊戲（對話歷史 + 戰役信息）
+  save(playerName) {
+    const savePath = path.join(GAME_DIR, 'saves', `${playerName}.json`);
+    const data = {
+      meta: {
+        name: playerName,
+        campaign: this.campaign,
+        roomId: this.roomId,
+        saved_at: new Date().toISOString(),
+      },
+      history: this.history
+    };
+    fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
+    return savePath;
+  }
+
+  // 讀取存檔
+  static async load(playerName) {
+    const savePath = path.join(GAME_DIR, 'saves', `${playerName}.json`);
+    if (!fs.existsSync(savePath)) return null;
+    const data = JSON.parse(fs.readFileSync(savePath, 'utf8'));
+    const session = new GameSession(data.meta.roomId);
+    session.campaign = data.meta.campaign;
+    session.history = data.history;
+    await session.init(data.meta.campaign);
+    // 用保存的歷史重建對話
+    session.chat = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction: session.chat ? undefined : ''
+    }).startChat({ history: data.history });
+    // 重新初始化帶完整系統提示
+    await session.init(data.meta.campaign);
+    return session;
+  }
+
   loadDungeonContext(dungeonId) {
     if (this.campaign) {
       const extra = loadDungeon(this.campaign, dungeonId);
@@ -296,6 +331,49 @@ wss.on('connection', (ws) => {
         // 非聊天消息：調用 Gemini AI 處理
         if (!isChat) {
           const roomId = ws.roomId;
+
+          // === 保存遊戲 ===
+          if (/^(保存|存檔|保存遊戲|save)$/i.test(msg.action.trim())) {
+            const session = gameSessions.get(roomId);
+            if (session) {
+              const savePath = session.save(senderName);
+              const saveMsg = JSON.stringify({ type: 'game_output', content: `💾 遊戲已保存！存檔：${senderName}\n下次輸入「讀取 ${senderName}」即可繼續。` });
+              if (ws.readyState === WebSocket.OPEN) ws.send(saveMsg);
+              console.log(`[存檔] ${senderName} 保存成功 → ${savePath}`);
+            } else {
+              const errMsg = JSON.stringify({ type: 'game_output', content: '⚠ 還沒有進行中的遊戲可保存。' });
+              if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+            }
+            break;
+          }
+
+          // === 讀取存檔 ===
+          const loadMatch = msg.action.trim().match(/^(讀取|載入|load)\s+(.+)$/i);
+          if (loadMatch) {
+            const loadName = loadMatch[2].trim();
+            try {
+              const session = await GameSession.load(loadName);
+              if (session) {
+                session.roomId = roomId;
+                gameSessions.set(roomId, session);
+                const loadMsg = JSON.stringify({ type: 'game_output', content: `💾 已載入 ${loadName} 的存檔（${session.campaign} 戰役）\n\n遊戲繼續——你要做什麼？` });
+                const room = rooms.get(roomId);
+                if (room) {
+                  if (room.host && room.host.readyState === WebSocket.OPEN) room.host.send(loadMsg);
+                  room.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(loadMsg); });
+                }
+                console.log(`[讀檔] ${loadName} 載入成功（${session.campaign}）`);
+              } else {
+                const errMsg = JSON.stringify({ type: 'game_output', content: `⚠ 找不到 ${loadName} 的存檔。` });
+                if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+              }
+            } catch (err) {
+              const errMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
+              if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+            }
+            break;
+          }
+
           // 確保有遊戲會話
           if (!gameSessions.has(roomId)) {
             gameSessions.set(roomId, new GameSession(roomId));
