@@ -540,13 +540,43 @@ wss.on('connection', (ws) => {
               if (loaded) {
                 loaded.roomId = roomId;
                 gameSessions.set(roomId, loaded);
-                const loadMsg = JSON.stringify({ type: 'game_output', content: `💾 已載入 ${loadName} 的存檔（${loaded.campaign} 戰役）\n\n遊戲繼續——你要做什麼？` });
+                // 切換房間狀態為遊戲中
                 const loadRoom = rooms.get(roomId);
                 if (loadRoom) {
-                  if (loadRoom.host && loadRoom.host.readyState === WebSocket.OPEN) loadRoom.host.send(loadMsg);
-                  loadRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(loadMsg); });
+                  loadRoom.phase = 'playing';
+                  loadRoom.gameStarted = true;
+                  loadRoom.campaign = loaded.campaign;
+                  loadRoom.turnOrder = getAllPlayerNames(loadRoom);
+                  loadRoom.currentTurn = 0;
+                  const loadMsg = JSON.stringify({ type: 'game_output', content: `💾 已載入 ${loadName} 的存檔（${loaded.campaign} 戰役）` });
+                  broadcastAll(loadRoom, loadMsg);
+                  broadcastTurnInfo(loadRoom);
+
+                  // 從歷史紀錄中提取原始玩家名單，比對當前房間
+                  const presentNames = getAllPlayerNames(loadRoom);
+                  const savedPlayers = [];
+                  const firstMsg = loaded.history.length > 0 ? loaded.history[0].parts[0].text : '';
+                  const playerMatches = firstMsg.matchAll(/=== 玩家：(.+?) ===/g);
+                  for (const m of playerMatches) savedPlayers.push(m[1]);
+
+                  const absentPlayers = savedPlayers.filter(n => !presentNames.includes(n));
+                  let npcNotice = '';
+                  if (absentPlayers.length > 0) {
+                    npcNotice = `\n以下玩家未在房間中，其角色由 NPC 自動接管：${absentPlayers.join('、')}。這些角色的行動由你（DM）根據角色性格自動決定，名字前加 [NPC] 標記。`;
+                    broadcastAll(loadRoom, { type: 'game_output', content: `⚠ 缺席玩家：${absentPlayers.join('、')} — 角色由 NPC 接管` });
+                  }
+
+                  // 自動讓 Gemini 恢復遊戲場景
+                  try {
+                    broadcastAll(loadRoom, { type: 'game_thinking', from: 'DM' });
+                    const resumePrompt = `[系統] 玩家讀取了存檔。當前在線玩家：${presentNames.join('、')}。${npcNotice}\n請簡要總結當前冒險進度（位置、隊伍狀態、正在進行的任務），然後提供編號選項讓玩家選擇下一步行動。`;
+                    const resumeResponse = await loaded.send(resumePrompt);
+                    broadcastAll(loadRoom, { type: 'game_output', content: resumeResponse });
+                  } catch (err) {
+                    console.error(`[AI 錯誤] 讀檔恢復失敗：${err.message}`);
+                  }
                 }
-                console.log(`[讀檔] ${loadName} 載入成功（${loaded.campaign}）`);
+                console.log(`[讀檔] ${loadName} 載入成功（${loaded.campaign}），房間切換為 playing 狀態`);
               } else {
                 const notFoundMsg = JSON.stringify({ type: 'game_output', content: `⚠ 找不到 ${loadName} 的存檔。` });
                 if (ws.readyState === WebSocket.OPEN) ws.send(notFoundMsg);
