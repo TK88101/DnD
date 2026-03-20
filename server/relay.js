@@ -637,13 +637,28 @@ wss.on('connection', (ws) => {
           // === 結束遊戲 ===
           else if (/^(結束遊戲|離開遊戲|退出遊戲|退出|quit|exit)$/i.test(actionTrimmed)) {
             const session = gameSessions.get(roomId);
+            const endRoom = rooms.get(roomId);
             if (session) {
               session.save(senderName);
-              broadcastAll(rooms.get(roomId), { type: 'game_output', content: `💾 遊戲已自動保存。\n👋 ${senderName} 結束了遊戲。下次輸入「讀取 ${senderName}」即可繼續。` });
-              console.log(`[結束] ${senderName} 結束遊戲並保存`);
-            } else {
-              ws.send(JSON.stringify({ type: 'game_output', content: '👋 遊戲結束。' }));
             }
+            // 重置房間狀態
+            if (endRoom) {
+              endRoom.phase = 'lobby';
+              endRoom.gameStarted = false;
+              endRoom.campaign = null;
+              endRoom.turnOrder = [];
+              endRoom.currentTurn = 0;
+              endRoom.characters.clear();
+              endRoom.afkPlayers.clear();
+              endRoom.createOrder = [];
+              endRoom.currentCreateIdx = 0;
+            }
+            // 清理遊戲會話
+            gameSessions.delete(roomId);
+            charCreators.forEach((_, key) => { if (key.startsWith(roomId + '_')) charCreators.delete(key); });
+
+            broadcastAll(endRoom || { host: ws, players: new Map() }, { type: 'game_output', content: `💾 遊戲已自動保存。\n👋 ${senderName} 結束了遊戲。\n\n輸入「讀取 ${senderName}」可繼續上次進度。\n輸入「開始遊戲」可開始新遊戲。` });
+            console.log(`[結束] ${senderName} 結束遊戲，房間重置為大廳`);
           }
           // === 正常遊戲行動（階段狀態機）===
           else {
