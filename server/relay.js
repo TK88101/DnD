@@ -144,6 +144,17 @@ class GameSession {
 - 每次移動到新區域時，按 core.md 的隨機遭遇規則掷 d20 決定是否觸發遭遇
 - 野外戰鬥的敵人等級必須與當前區域等級匹配，不能太強也不能太弱
 
+【動態難度調整 — 根據隊伍人數自動縮放】
+- 所有怪物/Boss 的數值必須根據當前隊伍人數動態調整：
+  - 1 人：HP ×0.5，攻擊 -2（單人友好）
+  - 2 人：HP ×0.8，攻擊 -1
+  - 3 人：HP ×1.0，攻擊 ±0（標準基準）
+  - 4 人：HP ×1.3，攻擊 +1
+  - 5 人：HP ×1.6，攻擊 +2
+  - 6-8 人（團本）：HP ×2.0-3.0，攻擊 +3-4
+- 副本/團本的人數建議標記在任務描述中，但不足人數時怪物自動下調，不會導致無法通關
+- 掉落素材數量隨人數增加：每多一人 +1 份基礎素材掉落
+
 【遊戲資料文件（必須嚴格遵循）】
 ${systemPrompt}`
     });
@@ -159,8 +170,8 @@ ${systemPrompt}`
       });
       this.chat = model.startChat({ history: this.history });
     }
-    // 注入外掛記憶體
-    const stateCtx = this.getStateContext();
+    // 注入外掛記憶體（含難度倍率）
+    const stateCtx = this.getStateContext(this._playerCount || 1);
     if (stateCtx) message = stateCtx + '\n' + message;
 
     // 30 秒超時保護
@@ -231,18 +242,40 @@ ${systemPrompt}`
     this.gameState = state;
   }
 
+  // 動態難度計算（代碼強制，不依賴 AI）
+  static getDifficulty(playerCount) {
+    const table = {
+      1: { hpMult: 0.5, atkMod: -2 },
+      2: { hpMult: 0.8, atkMod: -1 },
+      3: { hpMult: 1.0, atkMod: 0 },
+      4: { hpMult: 1.3, atkMod: 1 },
+      5: { hpMult: 1.6, atkMod: 2 },
+      6: { hpMult: 2.0, atkMod: 3 },
+      7: { hpMult: 2.5, atkMod: 3 },
+      8: { hpMult: 3.0, atkMod: 4 },
+    };
+    return table[Math.min(Math.max(playerCount, 1), 8)];
+  }
+
   // 生成記憶體注入文字
-  getStateContext() {
+  getStateContext(playerCount) {
     const s = this.gameState;
-    if (!s || !s.name) return '';
-    let ctx = `[系統記憶 — 當前遊戲狀態，以此為準]\n`;
-    ctx += `角色：${s.name}，${s.weapon || '未知'} Lv${s.level || 1}\n`;
-    ctx += `HP: ${s.hp || '?'}/${s.maxHp || '?'} | AC: ${s.ac || '?'}\n`;
-    ctx += `金幣: ${s.gold || 0}g | EXP: ${s.exp || 0}/${s.expNext || 300}\n`;
-    if (s.equipment) ctx += `裝備: ${s.equipment}\n`;
-    if (s.items) ctx += `物品: ${s.items}\n`;
-    if (s.location) ctx += `位置: ${s.location}\n`;
-    if (s.cartCount) ctx += `力盡次數: ${s.cartCount}/3\n`;
+    let ctx = `[系統記憶 — 當前遊戲狀態，以此為準，不可忽略]\n`;
+
+    // 難度注入（代碼計算的具體數字）
+    const diff = GameSession.getDifficulty(playerCount || 1);
+    ctx += `【難度倍率】當前隊伍 ${playerCount || 1} 人：所有怪物 HP ×${diff.hpMult}，攻擊加值 ${diff.atkMod >= 0 ? '+' : ''}${diff.atkMod}。這是代碼計算的數值，你必須使用這些數字，不能自行調整。\n`;
+    ctx += `【素材掉落】每位獵人可剝取 3 次，每多1人額外 +1 份基礎素材。\n`;
+
+    if (s && s.name) {
+      ctx += `角色：${s.name}，${s.weapon || '未知'} Lv${s.level || 1}\n`;
+      ctx += `HP: ${s.hp || '?'}/${s.maxHp || '?'} | AC: ${s.ac || '?'}\n`;
+      ctx += `金幣: ${s.gold || 0}g | EXP: ${s.exp || 0}/${s.expNext || 300}\n`;
+      if (s.equipment) ctx += `裝備: ${s.equipment}\n`;
+      if (s.items) ctx += `物品: ${s.items}\n`;
+      if (s.location) ctx += `位置: ${s.location}\n`;
+      if (s.cartCount) ctx += `力盡次數: ${s.cartCount}/3\n`;
+    }
     return ctx;
   }
 
@@ -541,6 +574,11 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({ type: 'error', message: '密碼錯誤' }));
           return;
         }
+        const currentCount = (room.host ? 1 : 0) + room.players.size;
+        if (currentCount >= 8) {
+          ws.send(JSON.stringify({ type: 'error', message: '房間已滿（最多 8 人）' }));
+          return;
+        }
         if (!msg.playerName || msg.playerName.trim() === '') {
           ws.send(JSON.stringify({ type: 'error', message: '請輸入名字' }));
           return;
@@ -698,6 +736,7 @@ wss.on('connection', (ws) => {
                   }
 
                   // 自動讓 Gemini 恢復遊戲場景
+                  loaded._playerCount = presentNames.length;
                   try {
                     broadcastAll(loadRoom, { type: 'game_thinking', from: 'DM' });
                     const resumePrompt = `[系統] 玩家讀取了存檔。當前在線玩家：${presentNames.join('、')}。${npcNotice}\n請簡要總結當前冒險進度（位置、隊伍狀態、正在進行的任務），然後提供編號選項讓玩家選擇下一步行動。`;
@@ -1039,6 +1078,7 @@ wss.on('connection', (ws) => {
               case 'playing': {
                 const session = gameSessions.get(roomId);
                 if (!session) break;
+                session._playerCount = totalPlayers; // 更新人數供難度計算
 
                 // 回合檢查
                 if (currentRoom.turnOrder.length > 0) {
