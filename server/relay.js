@@ -58,6 +58,73 @@ function loadDungeon(campaign, dungeonId) {
   return '';
 }
 
+// === 代碼控制的商店系統 ===
+const SHOP_ITEMS = {
+  monsterhunter: [
+    { name: '回復藥', price: 5, desc: '回復 1d8 HP' },
+    { name: '大回復藥', price: 15, desc: '回復 2d8+5 HP' },
+    { name: '解毒藥', price: 3, desc: '解除中毒' },
+    { name: '強走藥', price: 10, desc: '攻擊+2，3回合' },
+    { name: '鬼人藥', price: 25, desc: '攻擊+3，5回合' },
+    { name: '硬化藥', price: 10, desc: 'AC+2，3回合' },
+    { name: '閃光彈', price: 15, desc: '致盲1回合（DC13 CON）' },
+    { name: '音爆彈', price: 10, desc: '暈眩飛行/鑽地怪1回合' },
+    { name: '陷阱（落穴）', price: 20, desc: '固定大型怪物2回合' },
+    { name: '陷阱（麻痺）', price: 25, desc: '麻痺大型怪物1回合' },
+    { name: '捕獲用麻醉球', price: 30, desc: '捕獲瀕死怪物（HP≤25%）' },
+    { name: '大桶爆彈', price: 30, desc: '3d6火焰傷害' },
+    { name: '生命粉塵', price: 20, desc: '全隊回復1d6 HP' },
+  ],
+  warcraft: [
+    { name: '小型治療藥水', price: 5, desc: '回復 1d8 HP' },
+    { name: '中型治療藥水', price: 15, desc: '回復 2d8+5 HP' },
+    { name: '大型治療藥水', price: 40, desc: '回復 4d8+10 HP' },
+    { name: '小型法力藥水', price: 8, desc: '回復 15 MP' },
+    { name: '中型法力藥水', price: 20, desc: '回復 30 MP' },
+    { name: '大型法力藥水', price: 50, desc: '回復 50 MP' },
+    { name: '解毒藥劑', price: 5, desc: '解除中毒' },
+    { name: '繃帶', price: 2, desc: '脫戰後回復 1d6 HP' },
+  ],
+};
+// cthulhu 和 bloodborne 可後續補充
+SHOP_ITEMS.cthulhu = SHOP_ITEMS.warcraft;
+SHOP_ITEMS.bloodborne = SHOP_ITEMS.warcraft;
+
+function shopMenu(campaign, gold) {
+  const items = SHOP_ITEMS[campaign] || SHOP_ITEMS.warcraft;
+  let text = `\n═══════════════════════════════════════\n  🛒 雜貨店\n  💰 你的金幣：${gold}g\n───────────────────────────────────────\n`;
+  items.forEach((item, i) => {
+    const affordable = gold >= item.price ? '' : ' ❌';
+    text += `  ${i + 1}. ${item.name}（${item.price}g）— ${item.desc}${affordable}\n`;
+  });
+  text += `  0. 離開商店\n───────────────────────────────────────\n輸入編號購買：`;
+  return text;
+}
+
+function shopBuy(campaign, itemIdx, gameState) {
+  const items = SHOP_ITEMS[campaign] || SHOP_ITEMS.warcraft;
+  if (itemIdx < 1 || itemIdx > items.length) return { ok: false, text: '⚠ 無效的編號。' };
+  const item = items[itemIdx - 1];
+  const gold = parseInt(gameState.gold) || 0;
+  if (gold < item.price) return { ok: false, text: `⚠ 金幣不足！${item.name} 需要 ${item.price}g，你只有 ${gold}g。` };
+
+  // 扣錢
+  gameState.gold = String(gold - item.price);
+
+  // 更新物品欄
+  const itemList = gameState.items || '';
+  const regex = new RegExp(`${item.name}x(\\d+)`);
+  const match = itemList.match(regex);
+  if (match) {
+    const newCount = parseInt(match[1]) + 1;
+    gameState.items = itemList.replace(regex, `${item.name}x${newCount}`);
+  } else {
+    gameState.items = itemList ? itemList + `、${item.name}x1` : `${item.name}x1`;
+  }
+
+  return { ok: true, text: `✅ 購買了 ${item.name} ×1（-${item.price}g）\n💰 剩餘金幣：${gameState.gold}g` };
+}
+
 // 後處理：確保 Gemini 回覆包含編號選項
 function ensureOptions(text) {
   const lines = text.trim().split('\n');
@@ -801,6 +868,45 @@ wss.on('connection', (ws) => {
             } catch (err) {
               const loadErrMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
               if (ws.readyState === WebSocket.OPEN) ws.send(loadErrMsg);
+            }
+          }
+          // === 雜貨店（代碼控制）===
+          else if (/^(雜貨店|商店|\/shop)$/i.test(actionTrimmed)) {
+            const shopRoom = rooms.get(roomId);
+            const session = gameSessions.get(roomId);
+            const gold = parseInt(session?.gameState?.gold) || 0;
+            ws.shopping = true;
+            ws.send(JSON.stringify({ type: 'game_output', content: shopMenu(shopRoom?.campaign || 'warcraft', gold) }));
+          }
+          else if (ws.shopping) {
+            const session = gameSessions.get(roomId);
+            if (!session || !session.gameState) { ws.shopping = false; break; }
+            const input = parseInt(actionTrimmed);
+            if (input === 0 || /^(離開|返回|exit)$/i.test(actionTrimmed)) {
+              ws.shopping = false;
+              // 通知 Gemini 更新物品狀態
+              const state = session.gameState;
+              const sysMsg = `[系統] 玩家離開雜貨店。當前金幣：${state.gold}g，物品：${state.items}`;
+              try {
+                broadcastAll(rooms.get(roomId), { type: 'game_thinking', from: 'DM' });
+                const resp = await session.send(sysMsg);
+                broadcastAll(rooms.get(roomId), { type: 'game_output', content: resp });
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'game_output', content: `📍 回到村莊\n💰 ${state.gold}g\n物品：${state.items}\n\n1. 接受任務\n2. 前往鍛冶屋\n3. 前往雜貨店\n4. 吃貓飯` }));
+              }
+            } else if (!isNaN(input)) {
+              const shopRoom = rooms.get(roomId);
+              const result = shopBuy(shopRoom?.campaign || 'warcraft', input, session.gameState);
+              const gold = parseInt(session.gameState.gold) || 0;
+              let reply = result.text;
+              if (result.ok) {
+                reply += '\n' + shopMenu(shopRoom?.campaign || 'warcraft', gold);
+              } else {
+                reply += '\n' + shopMenu(shopRoom?.campaign || 'warcraft', gold);
+              }
+              ws.send(JSON.stringify({ type: 'game_output', content: reply }));
+            } else {
+              ws.send(JSON.stringify({ type: 'game_output', content: '⚠ 請輸入商品編號或 0 離開。' }));
             }
           }
           // === 結束遊戲 ===
