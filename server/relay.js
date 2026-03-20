@@ -89,7 +89,9 @@ class GameSession {
 - 絕對不要擅自修改玩家或角色的名字，「一橋」就是「一橋」，不能寫成「1橋」或其他變體，必須始終使用玩家創建時的原始名字
 - NPC隊友的名字前必須加上 [NPC] 標記，例如 [NPC]吉安娜、[NPC]薩爾
 - 狀態欄中必須明確區分玩家角色和NPC隊友，NPC名字始終帶 [NPC] 前綴
-- 必須精確追蹤金幣、HP、物品的變化，每次交易或戰鬥後狀態欄必須反映正確的數值（例如：花了3g買藥水，原本5g則顯示2g）
+- 必須精確追蹤金幣、HP、MP、物品的變化，每次交易或戰鬥後狀態欄必須反映正確的數值（例如：花了3g買藥水，原本5g則顯示2g）
+- 法術型職業必須顯示 MP，施放技能後 MP 要正確扣除，脫戰後逐漸恢復
+- 召喚類技能（如召喚小鬼）是持續性的，可以在戰前施放，不佔戰鬥回合
 
 【任務與升級規則 — 必須嚴格執行】
 - 完成任務時必須立即顯示獎勵明細：「✅ 任務完成！獲得 [X] EXP、[Y]g、[物品名]」
@@ -616,7 +618,7 @@ wss.on('connection', (ws) => {
                     currentRoom.phase = 'picking_campaign';
                     currentRoom.rollWinner = senderName;
                     currentRoom.createOrder = [senderName];
-                    const menuMsg = { type: 'game_output', content: '═══════════════════════════════════════\n  龍與地下城：無盡冒險\n═══════════════════════════════════════\n\n  1. ⚔️  艾澤拉斯征途（魔獸世界風）\n  2. 🐙 迷霧深淵（克蘇魯神話風）\n  3. 🩸 血月獵殺（血源詛咒風）\n\n請輸入 1、2 或 3 選擇戰役：' };
+                    const menuMsg = { type: 'game_output', content: '═══════════════════════════════════════\n  龍與地下城：無盡冒險\n═══════════════════════════════════════\n\n  1. ⚔️  艾澤拉斯征途（魔獸世界風）\n  2. 🐙 迷霧深淵（克蘇魯神話風）\n  3. 🩸 血月獵殺（血源詛咒風）\n  4. 🐉 狩獵時刻（怪物獵人風）\n\n請輸入 1-4 選擇戰役：' };
                     broadcastAll(currentRoom, menuMsg);
                   } else {
                     // 多人：掷骰決定誰選戰役
@@ -646,7 +648,7 @@ wss.on('connection', (ws) => {
                   const { winner, maxRoll, sortedNames } = resolveRolls(currentRoom);
                   currentRoom.createOrder = sortedNames; // 角色創建順序 = 掷骰排名
                   currentRoom.phase = 'picking_campaign';
-                  broadcastAll(currentRoom, { type: 'game_output', content: `\n🏆 ${winner} 擲出最高點 (${maxRoll})！由 ${winner} 選擇戰役。\n\n  1. ⚔️  艾澤拉斯征途（魔獸世界風）\n  2. 🐙 迷霧深淵（克蘇魯神話風）\n  3. 🩸 血月獵殺（血源詛咒風）\n\n${winner}，請輸入 1、2 或 3：` });
+                  broadcastAll(currentRoom, { type: 'game_output', content: `\n🏆 ${winner} 擲出最高點 (${maxRoll})！由 ${winner} 選擇戰役。\n\n  1. ⚔️  艾澤拉斯征途（魔獸世界風）\n  2. 🐙 迷霧深淵（克蘇魯神話風）\n  3. 🩸 血月獵殺（血源詛咒風）\n  4. 🐉 狩獵時刻（怪物獵人風）\n\n${winner}，請輸入 1-4：` });
                   // 只有贏家可輸入
                   broadcastAll(currentRoom, { type: 'turn_info', currentPlayer: winner });
                 }
@@ -659,11 +661,11 @@ wss.on('connection', (ws) => {
                   ws.send(JSON.stringify({ type: 'error', message: `現在由 ${currentRoom.rollWinner} 選擇戰役，請等待。` }));
                   break;
                 }
-                const campaignMap = { '1': 'warcraft', '2': 'cthulhu', '3': 'bloodborne' };
-                const campaignNames = { warcraft: '艾澤拉斯征途', cthulhu: '迷霧深淵', bloodborne: '血月獵殺' };
+                const campaignMap = { '1': 'warcraft', '2': 'cthulhu', '3': 'bloodborne', '4': 'monsterhunter' };
+                const campaignNames = { warcraft: '艾澤拉斯征途', cthulhu: '迷霧深淵', bloodborne: '血月獵殺', monsterhunter: '狩獵時刻' };
                 const selectedCampaign = campaignMap[actionTrimmed];
                 if (!selectedCampaign) {
-                  ws.send(JSON.stringify({ type: 'game_output', content: '⚠ 請輸入 1、2 或 3。' }));
+                  ws.send(JSON.stringify({ type: 'game_output', content: '⚠ 請輸入 1-4 選擇戰役。' }));
                   break;
                 }
 
@@ -675,7 +677,7 @@ wss.on('connection', (ws) => {
                 broadcastAll(currentRoom, { type: 'game_output', content: `⚔️ 已選擇戰役：${campaignNames[selectedCampaign]}！` });
 
                 // 檢查是否需要選陣營（魔獸有陣營）
-                const hasFactionsMap = { warcraft: true, cthulhu: false, bloodborne: false };
+                const hasFactionsMap = { warcraft: true, cthulhu: false, bloodborne: false, monsterhunter: false };
                 if (hasFactionsMap[selectedCampaign] && !isSolo) {
                   currentRoom.phase = 'rolling_faction';
                   currentRoom.rolls.clear();

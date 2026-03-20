@@ -56,6 +56,9 @@ const RACES = {
     '10': { name: '亡靈', faction: '部落', bonus: { INT: 2, CON: 1 }, trait: '亡靈意志 — 免疫恐懼，食屍恢復2d8', classes: ['戰士','法師','牧師','盜賊','術士'] },
     '11': { name: '血精靈', faction: '部落', bonus: { INT: 1, CHA: 2 }, trait: '奧術洪流 — 沉默所有敵人1回合+恢復技能', classes: ['法師','牧師','聖騎士','盜賊','獵人'] },
     '12': { name: '地精', faction: '部落', bonus: { INT: 2, CHA: 1 }, trait: '最佳交易 — 商店折扣10%，口袋炸彈2d6', classes: ['戰士','盜賊','法師','術士'] },
+  },
+  monsterhunter: {
+    '1': { name: '獵人', faction: '獵人公會', bonus: { STR: 1, DEX: 1, CON: 1 }, trait: '獵人本能 — 對大型怪物攻擊+1命中，可剝取素材鍛造裝備', classes: ['大劍','太刀','片手劍','雙劍','大錘','狩獵笛','長槍','弓','充能斧','操蟲棍'] },
   }
 };
 
@@ -71,6 +74,18 @@ const CLASSES = {
     '薩滿': { hp_die: 10, armor: '鎖甲', primary: 'INT/WIS', role: '遠程/近戰/治療', starter_weapon: '石錘(1d8+STR)', starter_armor: '鎖甲(AC+4)', starter_items: ['圖騰x4', '小型治療藥水x2'] },
     '術士': { hp_die: 6, armor: '布甲', primary: 'INT', role: '遠程DPS', starter_weapon: '暗影法杖(1d6+INT)', starter_armor: '布袍(AC+1)', starter_items: ['靈魂碎片x3', '小型治療藥水x2'] },
     '德魯伊': { hp_die: 8, armor: '皮甲', primary: 'WIS', role: '坦克/DPS/治療', starter_weapon: '橡木法杖(1d6+WIS)', starter_armor: '皮甲(AC+2)', starter_items: ['草藥包', '小型治療藥水x3'] },
+  },
+  monsterhunter: {
+    '大劍': { hp_die: 10, armor: '皮甲', primary: 'STR', role: '重擊手', starter_weapon: '鐵大劍(2d6+STR)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '攜帶用陷阱x1'], default_stats: { STR: 15, DEX: 10, CON: 14, INT: 8, WIS: 10, CHA: 8 } },
+    '太刀': { hp_die: 8, armor: '皮甲', primary: 'DEX', role: '見切反擊', starter_weapon: '鐵刀(1d10+DEX)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '攜帶用陷阱x1'], default_stats: { STR: 10, DEX: 15, CON: 12, INT: 8, WIS: 12, CHA: 8 } },
+    '片手劍': { hp_die: 8, armor: '皮甲', primary: 'DEX', role: '支援萬能', starter_weapon: '獵人小刀(1d6+DEX)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '攜帶用陷阱x1', '生命粉塵x2'], default_stats: { STR: 10, DEX: 14, CON: 12, INT: 10, WIS: 12, CHA: 10 } },
+    '雙劍': { hp_die: 6, armor: '皮甲', primary: 'DEX', role: '高速連擊', starter_weapon: '雙鐵刀(2d4+DEX)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '強走藥x2'], default_stats: { STR: 8, DEX: 15, CON: 12, INT: 8, WIS: 12, CHA: 10 } },
+    '大錘': { hp_die: 10, armor: '皮甲', primary: 'STR', role: '暈眩專家', starter_weapon: '鐵錘(1d12+STR)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '攜帶用陷阱x1'], default_stats: { STR: 15, DEX: 8, CON: 14, INT: 8, WIS: 12, CHA: 8 } },
+    '狩獵笛': { hp_die: 8, armor: '皮甲', primary: 'CHA', role: '團隊增益', starter_weapon: '金屬風笛(1d8+CHA)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '鬼人藥x1'], default_stats: { STR: 10, DEX: 10, CON: 12, INT: 10, WIS: 12, CHA: 14 } },
+    '長槍': { hp_die: 10, armor: '皮甲', primary: 'CON', role: '鐵壁防禦', starter_weapon: '鐵槍(1d8+STR)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '硬化藥x2'], default_stats: { STR: 12, DEX: 8, CON: 15, INT: 8, WIS: 14, CHA: 8 } },
+    '弓': { hp_die: 8, armor: '皮甲', primary: 'DEX', role: '遠程射擊', starter_weapon: '獵弓(1d8+DEX)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '強擊瓶x10'], default_stats: { STR: 8, DEX: 15, CON: 10, INT: 12, WIS: 14, CHA: 8 } },
+    '充能斧': { hp_die: 10, armor: '皮甲', primary: 'STR', role: '型態變換', starter_weapon: '鐵充能斧(1d10+STR)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '攜帶用陷阱x1'], default_stats: { STR: 14, DEX: 10, CON: 14, INT: 10, WIS: 10, CHA: 8 } },
+    '操蟲棍': { hp_die: 8, armor: '皮甲', primary: 'DEX', role: '空中突襲', starter_weapon: '鐵蟲棍(1d8+DEX)', starter_armor: '皮製獵裝(AC+2)', starter_items: ['回復藥x5', '獵蟲x1'], default_stats: { STR: 10, DEX: 15, CON: 12, INT: 10, WIS: 10, CHA: 8 } },
   }
 };
 
@@ -121,6 +136,12 @@ class CharacterCreator {
           availableRaces[id] = r;
         }
       }
+    }
+
+    // 只有一個種族時自動選擇（如怪物獵人）
+    const raceKeys = Object.keys(availableRaces);
+    if (raceKeys.length === 1 && (input === 'show' || input === '1')) {
+      input = raceKeys[0];
     }
 
     const raceData = availableRaces[input.trim()];
@@ -180,6 +201,31 @@ class CharacterCreator {
     const classData = CLASSES[this.campaign][className];
     this.className = className;
     this.classData = classData;
+
+    // 有預設屬性時自動分配（如怪物獵人），跳過手動分配
+    if (classData.default_stats) {
+      this.baseStats = { ...classData.default_stats };
+      const finalStats = { ...this.baseStats };
+      for (const [k, v] of Object.entries(this.raceData.bonus)) {
+        finalStats[k] = (finalStats[k] || 0) + v;
+      }
+      this.finalStats = finalStats;
+      this.step = 'name';
+
+      const keys = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+      let text = `\n✅ 武器選擇：${className}（${classData.role}）\n`;
+      text += `   HP骰：d${classData.hp_die} | 護甲：${classData.armor} | 主屬性：${classData.primary}\n\n`;
+      text += `───────────────────────────────────────\n`;
+      text += `  屬性（自動分配）\n`;
+      for (const k of keys) {
+        const mod = modifier(finalStats[k]);
+        text += `  ${STAT_NAMES[k]} ${String(finalStats[k]).padStart(3)}   ${mod >= 0 ? '+' : ''}${mod}\n`;
+      }
+      text += `───────────────────────────────────────\n\n`;
+      text += `為你的獵人取個名字：`;
+      return { text, done: false };
+    }
+
     this.step = 'stats';
 
     let text = `\n✅ 職業選擇：${className}（${classData.role}）\n`;
