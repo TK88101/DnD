@@ -2,6 +2,12 @@
 
 # 🎲 D&D 無盡冒險 — 多人文字 RPG
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-blue.svg)](https://ai.google.dev)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![GitHub Issues](https://img.shields.io/github/issues/TK88101/DnD)](https://github.com/TK88101/DnD/issues)
+
 基於瀏覽器的多人龍與地下城文字 RPG 遊戲。使用 Google Gemini AI 作為地下城主（DM），支持 1-8 人同時遊玩。
 
 ## 🎮 四大戰役

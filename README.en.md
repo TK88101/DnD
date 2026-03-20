@@ -2,6 +2,12 @@
 
 # 🎲 DnD Endless Adventure — Multiplayer Text RPG
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-blue.svg)](https://ai.google.dev)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![GitHub Issues](https://img.shields.io/github/issues/TK88101/DnD)](https://github.com/TK88101/DnD/issues)
+
 A browser-based multiplayer Dungeons & Dragons text RPG. Powered by Google Gemini AI as the Dungeon Master (DM), supporting 1–8 players simultaneously.
 
 ## 🎮 Four Campaigns

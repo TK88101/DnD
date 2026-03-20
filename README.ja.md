@@ -2,6 +2,12 @@
 
 # 🎲 D&D エンドレスアドベンチャー — マルチプレイヤーテキストRPG
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-blue.svg)](https://ai.google.dev)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![GitHub Issues](https://img.shields.io/github/issues/TK88101/DnD)](https://github.com/TK88101/DnD/issues)
+
 ブラウザベースのマルチプレイヤー ダンジョンズ＆ドラゴンズ テキストRPGです。Google Gemini AIをダンジョンマスター（DM）として採用し、1〜8人が同時にプレイできます。
 
 ## 🎮 四つのキャンペーン
