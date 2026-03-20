@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { CharacterCreator, attackRoll, skillCheck, roll, modifier } = require('./game-engine');
 
 const PORT = process.env.PORT || 8080;
 const MULTIPLAYER_DIR = path.join(__dirname, '..', 'multiplayer');
@@ -151,6 +152,7 @@ ${systemPrompt}`
 }
 
 const gameSessions = new Map();
+const charCreators = new Map(); // roomId → CharacterCreator
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // 確保 multiplayer 目錄存在
@@ -370,23 +372,90 @@ wss.on('connection', (ws) => {
               if (ws.readyState === WebSocket.OPEN) ws.send(loadErrMsg);
             }
           }
-          // === 正常遊戲行動：調用 Gemini ===
+          // === 正常遊戲行動 ===
           else {
-            if (!gameSessions.has(roomId)) {
-              gameSessions.set(roomId, new GameSession(roomId));
-            }
-            const session = gameSessions.get(roomId);
+            const creatorKey = `${roomId}_${senderName}`;
 
-            // 檢測戰役選擇並載入對應文件
-            if (!session.campaign) {
+            // --- 戰役選擇 ---
+            if (!gameSessions.has(roomId) || !gameSessions.get(roomId).campaign) {
               const campaignMap = { '1': 'warcraft', '2': 'cthulhu', '3': 'bloodborne' };
               const selectedCampaign = campaignMap[actionTrimmed];
               if (selectedCampaign) {
-                await session.init(selectedCampaign);
+                if (!gameSessions.has(roomId)) gameSessions.set(roomId, new GameSession(roomId));
+                await gameSessions.get(roomId).init(selectedCampaign);
                 console.log(`[戰役] 載入 ${selectedCampaign} 戰役文件`);
+
+                // 啟動角色創建器
+                const creator = new CharacterCreator(senderName, selectedCampaign);
+                charCreators.set(creatorKey, creator);
+                const result = creator.process('show'); // 顯示種族列表
+                const outMsg = JSON.stringify({ type: 'game_output', content: `⚔️ 已選擇戰役！\n${result.text}` });
+                const selRoom = rooms.get(roomId);
+                if (selRoom) {
+                  if (selRoom.host && selRoom.host.readyState === WebSocket.OPEN) selRoom.host.send(outMsg);
+                  selRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(outMsg); });
+                }
+                break;
+              }
+              // 還沒選戰役，提示選擇
+              if (!/^(開始|start)/i.test(actionTrimmed)) {
+                const menuMsg = JSON.stringify({ type: 'game_output', content: '═══════════════════════════════════════\n  龍與地下城：無盡冒險\n═══════════════════════════════════════\n\n  1. ⚔️  艾澤拉斯征途（魔獸世界風）\n  2. 🐙 迷霧深淵（克蘇魯神話風）\n  3. 🩸 血月獵殺（血源詛咒風）\n\n請輸入 1、2 或 3 選擇戰役：' });
+                if (ws.readyState === WebSocket.OPEN) ws.send(menuMsg);
+                break;
               }
             }
 
+            // --- 角色創建流程（服務器處理，不經過 Gemini）---
+            if (charCreators.has(creatorKey)) {
+              const creator = charCreators.get(creatorKey);
+              const result = creator.process(actionTrimmed);
+              const createMsg = JSON.stringify({ type: 'game_output', content: result.text });
+              const createRoom = rooms.get(roomId);
+              if (createRoom) {
+                if (createRoom.host && createRoom.host.readyState === WebSocket.OPEN) createRoom.host.send(createMsg);
+                createRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(createMsg); });
+              }
+
+              if (result.done && result.character) {
+                // 角色創建完成，保存並通知 Gemini
+                const savePath = path.join(GAME_DIR, 'saves', `${senderName}.json`);
+                fs.writeFileSync(savePath, JSON.stringify(result.character, null, 2), 'utf8');
+                console.log(`[角色] ${result.character.character.race} ${result.character.character.class} "${result.character.meta.name}" 創建完成`);
+
+                charCreators.delete(creatorKey);
+
+                // 告訴 Gemini 角色資料，讓它開始叙事
+                const session = gameSessions.get(roomId);
+                const charSummary = `[系統] 角色創建完成。玩家角色資料如下，請根據此資料開始遊戲叙事：
+角色名：${result.character.meta.name}
+種族：${result.character.character.race}（${result.character.character.faction}）
+職業：${result.character.character.class}
+等級：1
+HP：${result.character.character.hp}/${result.character.character.max_hp}
+AC：${result.character.character.ac}
+STR:${result.character.character.stats.STR} DEX:${result.character.character.stats.DEX} CON:${result.character.character.stats.CON} INT:${result.character.character.stats.INT} WIS:${result.character.character.stats.WIS} CHA:${result.character.character.stats.CHA}
+起始位置：${result.character.progress.current_location}
+裝備：${result.character.character.inventory.join('、')}
+
+請展示起始場景，開始冒險！用沉浸式第二人稱叙事。`;
+
+                try {
+                  const response = await session.send(charSummary);
+                  const storyMsg = JSON.stringify({ type: 'game_output', content: response });
+                  if (createRoom) {
+                    if (createRoom.host && createRoom.host.readyState === WebSocket.OPEN) createRoom.host.send(storyMsg);
+                    createRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(storyMsg); });
+                  }
+                } catch (err) {
+                  console.error(`[AI 錯誤] ${err.message}`);
+                }
+              }
+              break;
+            }
+
+            // --- 正常遊戲：調用 Gemini ---
+            const session = gameSessions.get(roomId);
+            if (!session) break;
             const prompt = `[玩家 ${senderName}]: ${actionTrimmed}`;
 
             console.log(`[收到] 房間 ${roomId} — ${senderName}: ${actionTrimmed}`);
