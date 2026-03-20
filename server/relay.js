@@ -92,7 +92,7 @@ class GameSession {
     this.campaign = campaign;
     const systemPrompt = loadGameContext(campaign);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。
 
 【最重要規則】你必須 100% 嚴格按照下方提供的遊戲資料文件來運行遊戲。絕對不要自行編造種族、職業、技能、敵人、物品等數據。所有數據必須來自下方文件。如果文件中有12個種族，你就必須展示12個種族，一個都不能少，也不能改動屬性加成。
@@ -152,7 +152,7 @@ ${systemPrompt}`
     if (!this.chat) {
       // 還沒選戰役，先用基礎模式
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',
         systemInstruction: `你是一個龍與地下城遊戲的DM。使用繁體中文。玩家正在選擇戰役。必須嚴格按照下方遊戲資料展示三個戰役選項。不要自行編造內容。\n\n` + loadGameContext(null)
       });
       this.chat = model.startChat({ history: this.history });
@@ -194,7 +194,7 @@ ${systemPrompt}`
     await session.init(data.meta.campaign);
     // 用保存的歷史重建對話
     session.chat = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       systemInstruction: session.chat ? undefined : ''
     }).startChat({ history: data.history });
     // 重新初始化帶完整系統提示
