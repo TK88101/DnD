@@ -345,7 +345,8 @@ fs.watch(MULTIPLAYER_DIR, (eventType, filename) => {
 
     // 清空 outbox
     fs.writeFileSync(outboxPath, '', 'utf8');
-    console.log(`[廣播] 向房間 ${roomId} 的 ${room.players.size} 名玩家發送了遊戲輸出`);
+    const total = (room.host && room.host.readyState === WebSocket.OPEN ? 1 : 0) + room.players.size;
+    console.log(`[廣播] 向房間 ${roomId} 的 ${total} 人發送了遊戲輸出（房主${room.host ? 1 : 0} + 玩家${room.players.size}）`);
   } catch (err) {
     // 文件可能正在被寫入，忽略
   }
