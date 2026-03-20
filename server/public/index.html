@@ -249,7 +249,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     bossMode = !bossMode;
     document.getElementById('boss').style.display = bossMode ? 'block' : 'none';
-    if (document.getElementById('game').style.display === 'flex') {
+    // 只在已登入（遊戲畫面激活）時切換
+    if (document.getElementById('login').style.display === 'none') {
       document.getElementById('game').style.display = bossMode ? 'none' : 'flex';
     }
     document.title = bossMode ? 'kubectl — staging deploy' : 'node — debug session';
