@@ -1,3 +1,5 @@
+**[中文](README.md)** | **[English](README.en.md)** | **[日本語](README.ja.md)**
+
 # 🎲 D&D 無盡冒險 — 多人文字 RPG
 
 基於瀏覽器的多人龍與地下城文字 RPG 遊戲。使用 Google Gemini AI 作為地下城主（DM），支持 1-8 人同時遊玩。
