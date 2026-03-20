@@ -314,13 +314,18 @@ fs.watch(MULTIPLAYER_DIR, (eventType, filename) => {
     const content = fs.readFileSync(outboxPath, 'utf8').trim();
     if (!content || content === '""' || content === '') return;
 
+    const parsed = JSON.parse(content);
+    const msg = JSON.stringify({ type: 'game_output', content: parsed });
+
+    // 廣播給房主
+    if (room.host && room.host.readyState === WebSocket.OPEN) {
+      room.host.send(msg);
+    }
+
     // 廣播給所有玩家
     room.players.forEach((playerWs) => {
       if (playerWs.readyState === WebSocket.OPEN) {
-        playerWs.send(JSON.stringify({
-          type: 'game_output',
-          content: JSON.parse(content)
-        }));
+        playerWs.send(msg);
       }
     });
 
