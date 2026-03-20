@@ -292,6 +292,37 @@ setInterval(() => {
   });
 }, 30000);
 
+// 監聽 outbox 文件變化，自動廣播給玩家
+fs.watch(MULTIPLAYER_DIR, (eventType, filename) => {
+  if (!filename || !filename.startsWith('outbox-') || !filename.endsWith('.json')) return;
+
+  const roomId = filename.replace('outbox-', '').replace('.json', '');
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  const outboxPath = path.join(MULTIPLAYER_DIR, filename);
+  try {
+    const content = fs.readFileSync(outboxPath, 'utf8').trim();
+    if (!content || content === '""' || content === '') return;
+
+    // 廣播給所有玩家
+    room.players.forEach((playerWs) => {
+      if (playerWs.readyState === WebSocket.OPEN) {
+        playerWs.send(JSON.stringify({
+          type: 'game_output',
+          content: JSON.parse(content)
+        }));
+      }
+    });
+
+    // 清空 outbox
+    fs.writeFileSync(outboxPath, '', 'utf8');
+    console.log(`[廣播] 向房間 ${roomId} 的 ${room.players.size} 名玩家發送了遊戲輸出`);
+  } catch (err) {
+    // 文件可能正在被寫入，忽略
+  }
+});
+
 // 定時清理超過 24 小時的空房間
 setInterval(() => {
   const now = Date.now();
