@@ -162,6 +162,63 @@
     flex-direction: column;
     overflow: hidden;
   }
+  #game-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* === 聊天框（魔獸風格） === */
+  #chat-box {
+    height: 180px;
+    border-top: 1px solid #30363d;
+    background: rgba(13, 17, 23, 0.95);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  #chat-box.collapsed {
+    height: 28px;
+  }
+  #chat-box.collapsed #chat-log,
+  #chat-box.collapsed .chat-input-line {
+    display: none;
+  }
+  #chat-header {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    justify-content: space-between;
+    background: #161b22;
+    flex-shrink: 0;
+  }
+  #chat-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  #chat-log::-webkit-scrollbar { width: 6px; }
+  #chat-log::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  #chat-log div { margin-bottom: 1px; }
+  .chat-input-line {
+    border-top: 1px solid #30363d;
+    background: #0d1117;
+  }
+  #chat-cmd {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    caret-color: #bc8cff;
+  }
 </style>
 </head>
 <body>
@@ -200,10 +257,23 @@
 
 <!-- 遊戲 -->
 <div id="game">
-  <div id="terminal"></div>
-  <div class="input-line">
-    <span class="prompt" id="ps1">$</span>
-    <input id="cmd" type="text" autocomplete="off" />
+  <div id="game-main">
+    <div id="terminal"></div>
+    <div class="input-line">
+      <span class="prompt" id="ps1">$</span>
+      <input id="cmd" type="text" autocomplete="off" placeholder="遊戲行動..." />
+    </div>
+  </div>
+  <div id="chat-box">
+    <div id="chat-header">
+      <span class="d">隊伍頻道</span>
+      <span id="chat-toggle" onclick="toggleChat()" class="d" style="cursor:pointer;">[−]</span>
+    </div>
+    <div id="chat-log"></div>
+    <div class="input-line chat-input-line">
+      <span class="prompt" style="color:#bc8cff;">&gt;</span>
+      <input id="chat-cmd" type="text" autocomplete="off" placeholder="和隊友聊天..." />
+    </div>
   </div>
 </div>
 
@@ -333,19 +403,19 @@ function createRoom() {
         err.textContent = msg.message;
         break;
       case 'player_joined':
-        out('<span class="g">+ ' + msg.playerName + ' 加入了遊戲</span>');
+        chatOut('<span class="g">+ ' + msg.playerName + ' 加入了遊戲</span>');
         break;
       case 'player_left':
-        out('<span class="y">- ' + msg.playerName + ' 離開了遊戲</span>');
+        chatOut('<span class="y">- ' + msg.playerName + ' 離開了遊戲</span>');
         break;
       case 'player_action':
-        out('<span class="b">[' + msg.from + ']</span> ' + msg.action);
+        chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.action);
         break;
       case 'chat':
         if (msg.isAction) {
-          out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+          chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
         } else {
-          out('<span class="m">[' + msg.from + ']</span> <span class="d">' + msg.text + '</span>');
+          chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
         }
         break;
       case 'game_output':
@@ -371,6 +441,22 @@ document.addEventListener('keydown', e => {
     document.getElementById('title').textContent = bossMode ? 'kubectl — staging deploy' : 'node — debug session';
   }
 });
+
+// === 聊天框輸出 ===
+function chatOut(html) {
+  const log = document.getElementById('chat-log');
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function toggleChat() {
+  const box = document.getElementById('chat-box');
+  const btn = document.getElementById('chat-toggle');
+  box.classList.toggle('collapsed');
+  btn.textContent = box.classList.contains('collapsed') ? '[+]' : '[−]';
+}
 
 // === 終端輸出 ===
 function out(html) {
@@ -439,9 +525,9 @@ function join() {
 
       case 'chat':
         if (msg.isAction) {
-          out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+          chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
         } else {
-          out('<span class="m">[' + msg.from + ']</span> <span class="d">' + msg.text + '</span>');
+          chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
         }
         break;
 
@@ -478,6 +564,23 @@ document.getElementById('cmd').addEventListener('keydown', e => {
       ws.send(JSON.stringify({ type: 'player_action', action: text }));
     } else {
       out('<span class="r">未連線到服務器</span>');
+    }
+
+    input.value = '';
+  }
+});
+
+// === 聊天輸入處理 ===
+document.getElementById('chat-cmd').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const input = e.target;
+    const text = input.value.trim();
+    if (!text) return;
+
+    chatOut('<span class="m">[' + myName + ']</span> ' + text);
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'player_action', action: '/say ' + text }));
     }
 
     input.value = '';
