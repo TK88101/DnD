@@ -290,6 +290,7 @@ wss.on('connection', (ws) => {
   ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', async (raw) => {
+    ws.isAlive = true; // 收到任何消息都視為活躍
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -393,9 +394,16 @@ wss.on('connection', (ws) => {
         });
 
         // 通知新玩家當前房間狀態
-        if (room.phase === 'lobby') {
-          ws.send(JSON.stringify({ type: 'game_output', content: '歡迎加入！等待開始遊戲。\n任何人輸入「開始遊戲」即可開始。' }));
-        } else if (room.phase === 'creating_stats') {
+        const phaseMessages = {
+          lobby: '歡迎加入！等待開始遊戲。\n任何人輸入「開始遊戲」即可開始。',
+          rolling_campaign: '正在掷骰決定誰選戰役，請稍候...',
+          picking_campaign: `正在由 ${room.rollWinner} 選擇戰役，請稍候...`,
+          rolling_faction: '正在掷骰決定誰選陣營，請稍候...',
+          picking_faction: `正在由 ${room.rollWinner} 選擇陣營，請稍候...`,
+          creating_turns: '正在輪流選擇種族和職業，請稍候...',
+          playing: '遊戲已在進行中，你可以在聊天欄觀戰。'
+        };
+        if (room.phase === 'creating_stats') {
           // 屬性分配階段，為新加入的玩家啟動角色創建
           const creatorKey = `${msg.roomId}_${playerName}`;
           if (!charCreators.has(creatorKey) && !room.characters.has(playerName)) {
@@ -405,8 +413,8 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({ type: 'game_output', content: `⚔️ 請創建你的角色。\n${raceResult.text}` }));
             room.createOrder.push(playerName);
           }
-        } else if (room.phase === 'playing') {
-          ws.send(JSON.stringify({ type: 'game_output', content: '遊戲已在進行中，你可以在聊天欄觀戰。' }));
+        } else if (phaseMessages[room.phase]) {
+          ws.send(JSON.stringify({ type: 'game_output', content: phaseMessages[room.phase] }));
         }
 
         console.log(`[玩家] ${playerName} 加入房間 ${msg.roomId}`);
@@ -824,6 +832,7 @@ wss.on('connection', (ws) => {
 
       // === 客戶端心跳 ===
       case 'ping': {
+        ws.isAlive = true; // 同時更新心跳標記，防止被服務器清理
         ws.send(JSON.stringify({ type: 'pong' }));
         break;
       }
