@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>node — debug session</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* === 假標題欄 === */
+  .title-bar {
+    background: #161b22;
+    color: #8b949e;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-r { background: #ff5f56; }
+  .dot-y { background: #ffbd2e; }
+  .dot-g { background: #27c93f; }
+
+  /* === 終端輸出區 === */
+  #terminal {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  #terminal::-webkit-scrollbar { width: 8px; }
+  #terminal::-webkit-scrollbar-track { background: #0d1117; }
+  #terminal::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+  #terminal div { margin-bottom: 2px; }
+
+  /* === 輸入行 === */
+  .input-line {
+    display: flex;
+    padding: 8px 12px;
+    border-top: 1px solid #30363d;
+    background: #161b22;
+    flex-shrink: 0;
+  }
+  .prompt { color: #7ee787; margin-right: 8px; white-space: nowrap; }
+  #cmd {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+    caret-color: #7ee787;
+  }
+
+  /* === 顏色 === */
+  .g { color: #7ee787; }
+  .y { color: #e3b341; }
+  .r { color: #f85149; }
+  .b { color: #58a6ff; }
+  .c { color: #39c5cf; }
+  .m { color: #bc8cff; }
+  .d { color: #484f58; }
+  .w { color: #f0f6fc; font-weight: bold; }
+
+  /* === 登入畫面 === */
+  #login {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 8px;
+  }
+  #login .logo { color: #7ee787; font-size: 16px; margin-bottom: 16px; }
+  #login input {
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 14px;
+    width: 260px;
+    outline: none;
+    border-radius: 4px;
+  }
+  #login input:focus { border-color: #58a6ff; }
+  #login button {
+    background: #238636;
+    color: #fff;
+    border: none;
+    padding: 8px 24px;
+    margin-top: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    border-radius: 4px;
+  }
+  #login button:hover { background: #2ea043; }
+  #login .err { color: #f85149; font-size: 13px; min-height: 20px; }
+
+  /* === 老闆鍵畫面 === */
+  #boss {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 20px;
+    overflow-y: auto;
+    z-index: 9999;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+
+  /* === 遊戲畫面 === */
+  #game {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+
+<div class="title-bar">
+  <div class="dots">
+    <div class="dot dot-r"></div>
+    <div class="dot dot-y"></div>
+    <div class="dot dot-g"></div>
+  </div>
+  <span id="title">node — debug session</span>
+  <span class="d">bash — 80x24</span>
+</div>
+
+<!-- 登入 -->
+<div id="login">
+  <div class="logo">$ ssh dnd-server --connect</div>
+  <input id="f-name" placeholder="你的名字" autofocus />
+  <input id="f-room" placeholder="房間號（6位數字）" />
+  <input id="f-pass" type="password" placeholder="密碼" />
+  <button onclick="join()">連線</button>
+  <div class="err" id="err"></div>
+</div>
+
+<!-- 遊戲 -->
+<div id="game">
+  <div id="terminal"></div>
+  <div class="input-line">
+    <span class="prompt" id="ps1">$</span>
+    <input id="cmd" type="text" autocomplete="off" />
+  </div>
+</div>
+
+<!-- 老闆鍵 -->
+<div id="boss">
+<span class="d">$ npm run build</span>
+<span style="color:#6a9955">> project@2.4.1 build</span>
+<span style="color:#6a9955">> webpack --config webpack.prod.js</span>
+
+<span class="d">asset main.js 245 KiB [emitted] [minimized] (name: main) 1 related asset</span>
+<span class="d">asset vendor.js 892 KiB [emitted] [minimized] (name: vendor) 1 related asset</span>
+<span class="d">asset styles.css 45.2 KiB [emitted] (name: styles)</span>
+<span class="d">runtime modules 2.49 KiB 12 modules</span>
+<span class="d">cacheable modules 1.18 MiB</span>
+<span class="d">  ./src/index.tsx 2.34 KiB [built] [code generated]</span>
+<span class="d">  ./src/App.tsx 8.91 KiB [built] [code generated]</span>
+<span class="d">  ./src/components/Dashboard.tsx 12.4 KiB [built] [code generated]</span>
+<span class="d">  ./src/components/DataGrid.tsx 9.87 KiB [built] [code generated]</span>
+<span class="d">  ./src/utils/api.ts 3.21 KiB [built] [code generated]</span>
+<span class="d">  ./src/hooks/useAuth.ts 1.87 KiB [built] [code generated]</span>
+<span class="d">  ./src/services/websocket.ts 4.53 KiB [built] [code generated]</span>
+<span style="color:#e3b341">WARNING in ./src/components/Chart.tsx</span>
+<span style="color:#e3b341">Module Warning: "defaultProps" is deprecated for function components</span>
+<span class="d">webpack 5.91.0 compiled with 1 warning in 4823 ms</span>
+
+<span class="d">$ node scripts/check-types.js</span>
+<span style="color:#6a9955">Type checking... done. No errors found in 47 files.</span>
+
+<span class="d">$ eslint src/ --ext .ts,.tsx</span>
+<span style="color:#6a9955">✓ All 47 files passed linting.</span>
+
+<span class="d">$ jest --coverage --silent</span>
+<span style="color:#6a9955">Test Suites: 23 passed, 23 total</span>
+<span style="color:#6a9955">Tests:       147 passed, 147 total</span>
+<span style="color:#6a9955">Snapshots:   12 passed, 12 total</span>
+<span style="color:#6a9955">Coverage:    87.3% Stmts | 82.1% Branch | 91.0% Funcs | 85.7% Lines</span>
+
+<span class="d">$ docker build -t app:latest .</span>
+<span class="d">[+] Building 12.3s (14/14) FINISHED</span>
+<span class="d"> => [internal] load build definition from Dockerfile    0.0s</span>
+<span class="d"> => [internal] load .dockerignore                       0.0s</span>
+<span class="d"> => [1/8] FROM node:20-alpine@sha256:a1b2c3             0.0s</span>
+<span class="d"> => CACHED [2/8] WORKDIR /app                           0.0s</span>
+<span class="d"> => [3/8] COPY package*.json ./                         0.1s</span>
+<span class="d"> => [4/8] RUN npm ci --production                       8.2s</span>
+<span class="d"> => [5/8] COPY dist/ ./dist/                            0.1s</span>
+<span class="d"> => [6/8] COPY config/ ./config/                        0.0s</span>
+<span style="color:#6a9955"> => exporting to image                                  1.2s</span>
+
+<span class="d">$ kubectl rollout status deployment/app -n staging</span>
+<span class="d">Waiting for deployment "app" rollout to finish: 1 of 3 updated replicas are available...</span>
+<span class="d">Waiting for deployment "app" rollout to finish: 2 of 3 updated replicas are available...</span>
+<span style="color:#6a9955">deployment "app" successfully rolled out</span>
+
+<span class="d">$ curl -s https://staging-api.internal/health | jq .</span>
+<span class="d">{</span>
+<span class="d">  "status": "healthy",</span>
+<span class="d">  "version": "2.4.1",</span>
+<span class="d">  "uptime": "0h 0m 23s",</span>
+<span class="d">  "checks": {</span>
+<span class="d">    "database": "ok",</span>
+<span class="d">    "redis": "ok",</span>
+<span class="d">    "elasticsearch": "ok"</span>
+<span class="d">  }</span>
+<span class="d">}</span>
+
+<span class="d">$ _</span>
+</div>
+
+<script>
+let ws = null;
+let bossMode = false;
+let myName = '';
+
+// === 老闆鍵 ===
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    bossMode = !bossMode;
+    document.getElementById('boss').style.display = bossMode ? 'block' : 'none';
+    if (document.getElementById('game').style.display === 'flex') {
+      document.getElementById('game').style.display = bossMode ? 'none' : 'flex';
+    }
+    document.title = bossMode ? 'kubectl — staging deploy' : 'node — debug session';
+    document.getElementById('title').textContent = bossMode ? 'kubectl — staging deploy' : 'node — debug session';
+  }
+});
+
+// === 終端輸出 ===
+function out(html) {
+  const t = document.getElementById('terminal');
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  t.appendChild(d);
+  t.scrollTop = t.scrollHeight;
+}
+
+function outLines(text) {
+  text.split('\n').forEach(line => {
+    // 簡單的 ANSI-like 著色
+    let html = line
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/═/g, '<span class="d">═</span>')
+      .replace(/─/g, '<span class="d">─</span>')
+      .replace(/[📍⚔️🎲👤👥💰🎉🆕🤝]/gu, '<span>$&</span>');
+    out(html);
+  });
+}
+
+// === 加入房間 ===
+function join() {
+  const name = document.getElementById('f-name').value.trim();
+  const room = document.getElementById('f-room').value.trim();
+  const pass = document.getElementById('f-pass').value.trim();
+  const err = document.getElementById('err');
+
+  if (!name || !room || !pass) { err.textContent = '請填寫所有欄位'; return; }
+  if (!/^\d{6}$/.test(room)) { err.textContent = '房間號為6位數字'; return; }
+
+  myName = name;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'join_room', roomId: room, password: pass, playerName: name }));
+  };
+
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    switch (msg.type) {
+      case 'joined':
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('game').style.display = 'flex';
+        document.getElementById('ps1').textContent = myName + ' $';
+        // 假啟動輸出
+        out('<span class="d">$ node --inspect app.js</span>');
+        out('<span class="d">Debugger listening on ws://127.0.0.1:9229/a1b2c3d4</span>');
+        out('<span class="d">For help, see: https://nodejs.org/en/docs/inspector</span>');
+        out('<span class="g">Connected to session [' + room + ']</span>');
+        out('<span class="d">---</span>');
+        out('<span class="c">歡迎，' + name + '！等待 DM 分配角色...</span>');
+        out('<span class="d">提示：按 Esc 鍵切換偽裝畫面（老闆鍵）</span>');
+        out('');
+        document.getElementById('cmd').focus();
+        break;
+
+      case 'error':
+        err.textContent = msg.message;
+        break;
+
+      case 'game_output':
+        outLines(msg.content);
+        break;
+
+      case 'kicked':
+        out('<span class="r">⚠ ' + msg.message + '</span>');
+        ws.close();
+        break;
+
+      case 'room_closed':
+        out('<span class="r">⚠ ' + msg.message + '</span>');
+        ws.close();
+        break;
+    }
+  };
+
+  ws.onerror = () => { err.textContent = '連線失敗，請確認服務器已啟動'; };
+  ws.onclose = () => {
+    if (document.getElementById('game').style.display === 'flex') {
+      out('<span class="r">連線已中斷</span>');
+    }
+  };
+}
+
+// === 輸入處理 ===
+document.getElementById('cmd').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const input = e.target;
+    const text = input.value.trim();
+    if (!text) return;
+
+    out('<span class="g">' + myName + ' $ </span>' + text);
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'player_action', action: text }));
+    } else {
+      out('<span class="r">未連線到服務器</span>');
+    }
+
+    input.value = '';
+  }
+});
+
+// 登入表單回車支援
+document.querySelectorAll('#login input').forEach(input => {
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') join();
+  });
+});
+</script>
+</body>
+</html>
