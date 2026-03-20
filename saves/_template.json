@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "name": "",
+    "campaign": "",
+    "created_at": "",
+    "last_played": "",
+    "play_time_minutes": 0
+  },
+  "character": {
+    "race": "",
+    "class": "",
+    "level": 1,
+    "exp": 0,
+    "exp_to_next": 300,
+    "stats": {
+      "STR": 10,
+      "DEX": 10,
+      "CON": 10,
+      "INT": 10,
+      "WIS": 10,
+      "CHA": 10
+    },
+    "hp": 0,
+    "max_hp": 0,
+    "ac": 10,
+    "abilities": [],
+    "talent_tree": {
+      "path_1": { "name": "", "points": [] },
+      "path_2": { "name": "", "points": [] },
+      "path_3": { "name": "", "points": [] },
+      "available_points": 0
+    },
+    "inventory": [],
+    "equipment": {
+      "weapon": null,
+      "off_hand": null,
+      "armor": null,
+      "trinket_1": null,
+      "trinket_2": null
+    },
+    "gold": 0,
+    "professions": []
+  },
+  "companions": [],
+  "progress": {
+    "main_quest": "",
+    "side_quests": [],
+    "completed_quests": [],
+    "completed_dungeons": [],
+    "reputation": {},
+    "story_flags": [],
+    "current_location": "",
+    "mount": null
+  },
+  "dungeon_state": null,
+  "session_log": []
+}
