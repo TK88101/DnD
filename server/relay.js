@@ -172,8 +172,48 @@ ${systemPrompt}`
     return text;
   }
 
+  // 歷史壓縮：超過 40 條對話時，把舊的壓縮成摘要
+  async compressHistory() {
+    const MAX_HISTORY = 40;
+    if (this.history.length <= MAX_HISTORY) return;
+
+    const keepFirst = this.history.slice(0, 2);   // 角色創建資訊
+    const keepRecent = this.history.slice(-20);    // 最近 20 條保留完整
+    const toSummarize = this.history.slice(2, -20); // 中間部分壓縮
+
+    // 提取要壓縮的文字
+    const summaryText = toSummarize.map(h => {
+      const role = h.role === 'user' ? '玩家' : 'DM';
+      const text = h.parts[0].text.substring(0, 200); // 每條截取前 200 字
+      return `[${role}] ${text}`;
+    }).join('\n');
+
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const result = await model.generateContent(
+        `請用300字以內總結以下遊戲歷程。必須包含：當前角色狀態（HP、等級、裝備、金幣、物品）、已完成的任務、進行中的任務、重要事件。只輸出摘要，不要加任何前綴。\n\n${summaryText}`
+      );
+      const summary = result.response.text();
+
+      this.history = [
+        ...keepFirst,
+        { role: 'user', parts: [{ text: `[系統] 以下是之前冒險進度的摘要：\n${summary}` }] },
+        { role: 'model', parts: [{ text: '收到，我已了解之前的冒險進度。繼續遊戲。' }] },
+        ...keepRecent
+      ];
+
+      // 重建 chat session
+      await this.init(this.campaign);
+
+      console.log(`[壓縮] 歷史從 ${keepFirst.length + toSummarize.length + keepRecent.length} 條壓縮為 ${this.history.length} 條`);
+    } catch (err) {
+      console.error(`[壓縮失敗] ${err.message}，保留原始歷史`);
+    }
+  }
+
   // 保存遊戲（對話歷史 + 戰役信息）
-  save(playerName) {
+  async save(playerName) {
+    await this.compressHistory(); // 保存前自動壓縮
     const savePath = path.join(GAME_DIR, 'saves', `${playerName}.json`);
     const data = {
       meta: {
@@ -572,7 +612,7 @@ wss.on('connection', (ws) => {
           if (/^(保存|存檔|保存遊戲|存檔遊戲|存遊戲|save)$/i.test(actionTrimmed)) {
             const session = gameSessions.get(roomId);
             if (session) {
-              const savePath = session.save(senderName);
+              const savePath = await session.save(senderName);
               const saveMsg = JSON.stringify({ type: 'game_output', content: `💾 遊戲已保存！存檔：${senderName}\n下次輸入「讀檔 ${senderName}」即可繼續。` });
               if (ws.readyState === WebSocket.OPEN) ws.send(saveMsg);
               console.log(`[存檔] ${senderName} 保存成功 → ${savePath}`);
@@ -640,7 +680,7 @@ wss.on('connection', (ws) => {
             const session = gameSessions.get(roomId);
             const endRoom = rooms.get(roomId);
             if (session) {
-              session.save(senderName);
+              await session.save(senderName);
             }
             // 重置房間狀態
             if (endRoom) {
