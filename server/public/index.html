@@ -598,15 +598,58 @@ function out(html) {
   t.scrollTop = t.scrollHeight;
 }
 
+// 角色顏色系統
+const CHAR_COLORS = {};
+const CHAR_PALETTE = ['#58a6ff','#f97583','#7ee787','#d2a8ff','#e3b341','#39c5cf','#ff9bce','#79c0ff'];
+let charColorIdx = 0;
+function getCharColor(name) {
+  if (!CHAR_COLORS[name]) {
+    CHAR_COLORS[name] = CHAR_PALETTE[charColorIdx++ % CHAR_PALETTE.length];
+  }
+  return CHAR_COLORS[name];
+}
+
 function outLines(text) {
   text.split('\n').forEach(line => {
-    // 簡單的 ANSI-like 著色
+    const trimmed = line.trim();
+    if (!trimmed) { out(''); return; }
+
     let html = line
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/═/g, '<span class="d">═</span>')
-      .replace(/─/g, '<span class="d">─</span>')
-      .replace(/[📍⚔️🎲👤👥💰🎉🆕🤝]/gu, '<span>$&</span>');
-    out(html);
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    // 純分隔線 → 暗色
+    if (/^[═─\s]+$/.test(trimmed)) {
+      out('<span class="d">' + html + '</span>'); return;
+    }
+
+    // 角色名 **name** → 角色專屬色
+    html = html.replace(/\*\*(.+?)\*\*/g, (_, name) => {
+      const c = getCharColor(name);
+      return '<span style="color:' + c + ';font-weight:bold">' + name + '</span>';
+    });
+
+    // [NPC] 標記 → 暗色
+    html = html.replace(/\[NPC\]/g, '<span class="d">[NPC]</span>');
+
+    // NPC 對話「text」→ 金色
+    html = html.replace(/「([^」]*)」/g, '<span class="y">「$1」</span>');
+
+    // 狀態欄行（emoji 開頭或 HP/AC 開頭）
+    if (/^[👤👥💰📍⚔️🎲]/u.test(trimmed)) {
+      out('<span class="d">' + html + '</span>');
+    }
+    // 選項行（數字 + 點/頓號）
+    else if (/^\s*\d+[\.、\s]/.test(line)) {
+      out('<span class="c">' + html + '</span>');
+    }
+    // 行動提示
+    else if (/^下一個行動玩家/.test(trimmed) || /^請(輸入|選擇)/.test(trimmed)) {
+      out('<span class="c">' + html + '</span>');
+    }
+    // 旁白/正文 → 白色
+    else {
+      out('<span style="color:#e6edf3">' + html + '</span>');
+    }
   });
 }
 
