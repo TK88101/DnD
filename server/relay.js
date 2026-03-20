@@ -190,6 +190,10 @@ ${systemPrompt}`
     // 從回覆中解析遊戲狀態，更新外掛記憶體
     this.parseState(text);
 
+    // 升級檢測（純代碼，不依賴 Gemini）
+    const levelUpText = this.checkLevelUp();
+    if (levelUpText) text += '\n\n' + levelUpText;
+
     // 裁剪歷史：只保留最近 10 輪對話（20 條 message）
     const MAX_MESSAGES = 20;
     if (this.history.length > MAX_MESSAGES + 2) {
@@ -278,6 +282,48 @@ ${systemPrompt}`
       if (s.cartCount) ctx += `力盡次數: ${s.cartCount}/3\n`;
     }
     return ctx;
+  }
+
+  // 升級檢測（純代碼）
+  checkLevelUp() {
+    const s = this.gameState;
+    if (!s || !s.exp) return null;
+
+    const EXP_TABLE = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
+    const HP_DICE = { '大劍': 10, '太刀': 8, '片手劍': 8, '雙劍': 6, '大錘': 10, '狩獵笛': 8, '長槍': 10, '弓': 8, '充能斧': 10, '操蟲棍': 8, '戰士': 10, '法師': 6, '牧師': 8, '盜賊': 8, '獵人': 8, '聖騎士': 10, '薩滿': 10, '術士': 6, '德魯伊': 8 };
+
+    const currentExp = parseInt(String(s.exp).replace(/,/g, '')) || 0;
+    const currentLevel = parseInt(s.level) || 1;
+    const nextLevel = currentLevel + 1;
+    if (nextLevel > 20) return null;
+
+    const threshold = EXP_TABLE[nextLevel];
+    if (!threshold || currentExp < threshold) return null;
+
+    // 升級！代碼計算
+    const hpDie = HP_DICE[s.weapon] || 8;
+    const hpRoll = Math.floor(Math.random() * hpDie) + 1;
+    const conMod = 0; // 從狀態無法精確取得 CON 調整值，預設 0
+    const hpGain = Math.max(hpRoll + conMod, 1);
+    const oldMaxHp = parseInt(s.maxHp) || 10;
+    const newMaxHp = oldMaxHp + hpGain;
+    const newExpNext = EXP_TABLE[nextLevel + 1] || '—';
+
+    // 更新 gameState
+    s.level = String(nextLevel);
+    s.maxHp = String(newMaxHp);
+    s.hp = String(newMaxHp); // 升級回滿血
+    s.expNext = String(newExpNext);
+
+    let text = `\n🎉 升級！達到等級 ${nextLevel}！\n`;
+    text += `───────────────────────────────────────\n`;
+    text += `HP 增加：🎲 d${hpDie}(${hpRoll}) + ${conMod} = +${hpGain} HP\n`;
+    text += `新 HP：${newMaxHp}/${newMaxHp}\n`;
+    text += `下一級所需 EXP：${newExpNext}\n`;
+    text += `───────────────────────────────────────`;
+
+    console.log(`[升級] Lv${currentLevel} → Lv${nextLevel}，HP +${hpGain}（${oldMaxHp} → ${newMaxHp}）`);
+    return text;
   }
 
   // 保存遊戲（對話歷史 + 戰役信息 + 外掛記憶體）
