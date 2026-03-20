@@ -159,7 +159,7 @@
   #game {
     display: none;
     flex: 1;
-    flex-direction: column;
+    flex-direction: row;
     overflow: hidden;
   }
   #game-main {
@@ -167,23 +167,24 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    min-height: 0;
+    min-width: 0;
   }
 
-  /* === 聊天框（魔獸風格） === */
+  /* === 聊天框（魔獸風格，右側欄） === */
   #chat-box {
-    height: 180px;
-    border-top: 1px solid #30363d;
+    width: 280px;
+    border-left: 1px solid #30363d;
     background: rgba(13, 17, 23, 0.95);
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
   }
   #chat-box.collapsed {
-    height: 28px;
+    width: 28px;
   }
   #chat-box.collapsed #chat-log,
-  #chat-box.collapsed .chat-input-line {
+  #chat-box.collapsed .chat-input-line,
+  #chat-box.collapsed #chat-header span:first-child {
     display: none;
   }
   #chat-header {
