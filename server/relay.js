@@ -331,9 +331,10 @@ wss.on('connection', (ws) => {
         // 非聊天消息：調用 Gemini AI 處理
         if (!isChat) {
           const roomId = ws.roomId;
+          const actionTrimmed = msg.action.trim();
 
           // === 保存遊戲 ===
-          if (/^(保存|存檔|保存遊戲|save)$/i.test(msg.action.trim())) {
+          if (/^(保存|存檔|保存遊戲|save)$/i.test(actionTrimmed)) {
             const session = gameSessions.get(roomId);
             if (session) {
               const savePath = session.save(senderName);
@@ -341,68 +342,67 @@ wss.on('connection', (ws) => {
               if (ws.readyState === WebSocket.OPEN) ws.send(saveMsg);
               console.log(`[存檔] ${senderName} 保存成功 → ${savePath}`);
             } else {
-              const errMsg = JSON.stringify({ type: 'game_output', content: '⚠ 還沒有進行中的遊戲可保存。' });
-              if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+              const noGameMsg = JSON.stringify({ type: 'game_output', content: '⚠ 還沒有進行中的遊戲可保存。' });
+              if (ws.readyState === WebSocket.OPEN) ws.send(noGameMsg);
             }
-            break;
           }
-
           // === 讀取存檔 ===
-          const loadMatch = msg.action.trim().match(/^(讀取|載入|load)\s+(.+)$/i);
-          if (loadMatch) {
-            const loadName = loadMatch[2].trim();
+          else if (/^(讀取|載入|load)\s+/i.test(actionTrimmed)) {
+            const loadName = actionTrimmed.replace(/^(讀取|載入|load)\s+/i, '').trim();
             try {
-              const session = await GameSession.load(loadName);
-              if (session) {
-                session.roomId = roomId;
-                gameSessions.set(roomId, session);
-                const loadMsg = JSON.stringify({ type: 'game_output', content: `💾 已載入 ${loadName} 的存檔（${session.campaign} 戰役）\n\n遊戲繼續——你要做什麼？` });
-                const room = rooms.get(roomId);
-                if (room) {
-                  if (room.host && room.host.readyState === WebSocket.OPEN) room.host.send(loadMsg);
-                  room.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(loadMsg); });
+              const loaded = await GameSession.load(loadName);
+              if (loaded) {
+                loaded.roomId = roomId;
+                gameSessions.set(roomId, loaded);
+                const loadMsg = JSON.stringify({ type: 'game_output', content: `💾 已載入 ${loadName} 的存檔（${loaded.campaign} 戰役）\n\n遊戲繼續——你要做什麼？` });
+                const loadRoom = rooms.get(roomId);
+                if (loadRoom) {
+                  if (loadRoom.host && loadRoom.host.readyState === WebSocket.OPEN) loadRoom.host.send(loadMsg);
+                  loadRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(loadMsg); });
                 }
-                console.log(`[讀檔] ${loadName} 載入成功（${session.campaign}）`);
+                console.log(`[讀檔] ${loadName} 載入成功（${loaded.campaign}）`);
               } else {
-                const errMsg = JSON.stringify({ type: 'game_output', content: `⚠ 找不到 ${loadName} 的存檔。` });
-                if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+                const notFoundMsg = JSON.stringify({ type: 'game_output', content: `⚠ 找不到 ${loadName} 的存檔。` });
+                if (ws.readyState === WebSocket.OPEN) ws.send(notFoundMsg);
               }
             } catch (err) {
-              const errMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
-              if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+              const loadErrMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
+              if (ws.readyState === WebSocket.OPEN) ws.send(loadErrMsg);
             }
-            break;
           }
-
-          // 確保有遊戲會話
-          if (!gameSessions.has(roomId)) {
-            gameSessions.set(roomId, new GameSession(roomId));
-          }
-          const session = gameSessions.get(roomId);
-          const prompt = `[玩家 ${senderName}]: ${msg.action}`;
-
-          // 發送 "思考中" 提示
-          const thinkingMsg = JSON.stringify({ type: 'game_thinking', from: 'DM' });
-          const room = rooms.get(roomId);
-          if (room) {
-            if (room.host && room.host.readyState === WebSocket.OPEN) room.host.send(thinkingMsg);
-            room.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(thinkingMsg); });
-          }
-
-          // 調用 Gemini
-          try {
-            const response = await session.send(prompt);
-            const outputMsg = JSON.stringify({ type: 'game_output', content: response });
-            const room2 = rooms.get(roomId);
-            if (room2) {
-              if (room2.host && room2.host.readyState === WebSocket.OPEN) room2.host.send(outputMsg);
-              room2.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(outputMsg); });
+          // === 正常遊戲行動：調用 Gemini ===
+          else {
+            if (!gameSessions.has(roomId)) {
+              gameSessions.set(roomId, new GameSession(roomId));
             }
-            console.log(`[AI] 房間 ${roomId} — ${senderName}: ${msg.action.slice(0, 30)}...`);
-          } catch (err) {
-            console.error(`[AI 錯誤]`, err.message);
-            const errMsg = JSON.stringify({ type: 'game_output', content: `⚠ DM 暫時無法回應：${err.message}` });
-            if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+            const session = gameSessions.get(roomId);
+            const prompt = `[玩家 ${senderName}]: ${actionTrimmed}`;
+
+            console.log(`[收到] 房間 ${roomId} — ${senderName}: ${actionTrimmed}`);
+
+            // 發送 "思考中" 提示
+            const thinkingMsg = JSON.stringify({ type: 'game_thinking', from: 'DM' });
+            const thinkRoom = rooms.get(roomId);
+            if (thinkRoom) {
+              if (thinkRoom.host && thinkRoom.host.readyState === WebSocket.OPEN) thinkRoom.host.send(thinkingMsg);
+              thinkRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(thinkingMsg); });
+            }
+
+            // 調用 Gemini
+            try {
+              const response = await session.send(prompt);
+              const outputMsg = JSON.stringify({ type: 'game_output', content: response });
+              const outRoom = rooms.get(roomId);
+              if (outRoom) {
+                if (outRoom.host && outRoom.host.readyState === WebSocket.OPEN) outRoom.host.send(outputMsg);
+                outRoom.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(outputMsg); });
+              }
+              console.log(`[AI] 房間 ${roomId} — 回覆完成（${response.length}字）`);
+            } catch (err) {
+              console.error(`[AI 錯誤] ${err.message}`);
+              const aiErrMsg = JSON.stringify({ type: 'game_output', content: `⚠ DM 暫時無法回應：${err.message}` });
+              if (ws.readyState === WebSocket.OPEN) ws.send(aiErrMsg);
+            }
           }
         }
         break;
