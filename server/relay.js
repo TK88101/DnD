@@ -153,16 +153,23 @@ class GameSession {
     this.history = [];
     this.chat = null;
     this.gameState = null; // 外掛記憶體
-    this.lastOptions = {}; // 上次回覆的選項映射 { "1": "攻擊大兇豺龍", "2": "使用物品", ... }
+    this.lastOptions = {};
     this.saveData = null;
+    this.lang = 'zh'; // 語言設定
   }
 
   async init(campaign) {
     this.campaign = campaign;
     const systemPrompt = loadGameContext(campaign);
+    const LANG_INSTRUCTION = {
+      zh: '使用繁體中文回覆。',
+      en: 'Respond in English. All narration, dialogue, options, and status bars must be in English.',
+      ja: '日本語で回答してください。ナレーション、会話、選択肢、ステータスバーはすべて日本語で。',
+    };
+    const langInst = LANG_INSTRUCTION[this.lang] || LANG_INSTRUCTION.zh;
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。
+      systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。${langInst}
 
 【最重要規則】你必須 100% 嚴格按照下方提供的遊戲資料文件來運行遊戲。絕對不要自行編造種族、職業、技能、敵人、物品等數據。所有數據必須來自下方文件。如果文件中有12個種族，你就必須展示12個種族，一個都不能少，也不能改動屬性加成。
 
@@ -687,7 +694,8 @@ wss.on('connection', (ws) => {
           rollWinner: null,     // 掷骰贏家
           createOrder: [],      // 角色創建順序（掷骰排序）
           currentCreateIdx: 0,  // 當前創建角色的玩家索引
-          afkPlayers: new Set()  // 暫離的玩家
+          afkPlayers: new Set(), // 暫離的玩家
+          lang: msg.lang || 'zh' // 語言設定
         });
         ws.roomId = roomId;
         ws.isHost = true;
@@ -871,6 +879,7 @@ wss.on('connection', (ws) => {
 
                   // 自動讓 Gemini 恢復遊戲場景
                   loaded._playerCount = presentNames.length;
+                  loaded.lang = loadRoom.lang || 'zh';
                   try {
                     broadcastAll(loadRoom, { type: 'game_thinking', from: 'DM' });
                     const resumePrompt = `[系統] 玩家讀取了存檔。當前在線玩家：${presentNames.join('、')}。${npcNotice}\n請簡要總結當前冒險進度（位置、隊伍狀態、正在進行的任務），然後提供編號選項讓玩家選擇下一步行動。`;
@@ -1026,6 +1035,7 @@ wss.on('connection', (ws) => {
                 }
 
                 if (!gameSessions.has(roomId)) gameSessions.set(roomId, new GameSession(roomId));
+                gameSessions.get(roomId).lang = currentRoom.lang || 'zh';
                 await gameSessions.get(roomId).init(selectedCampaign);
                 currentRoom.campaign = selectedCampaign;
                 console.log(`[戰役] 載入 ${selectedCampaign} 戰役文件`);
