@@ -185,6 +185,7 @@
   </div>
   <div id="create-form" style="display:none;">
     <input id="f-host-name" placeholder="你的名字" />
+    <input id="f-host-room" placeholder="自訂房間號" />
     <input id="f-host-pass" type="password" placeholder="設定房間密碼" />
     <button onclick="createRoom()">創建</button>
   </div>
@@ -293,10 +294,12 @@ function showJoin() {
 // === 創建房間 ===
 function createRoom() {
   const name = document.getElementById('f-host-name').value.trim();
+  const customRoom = document.getElementById('f-host-room').value.trim();
   const password = document.getElementById('f-host-pass').value.trim();
   const err = document.getElementById('err');
 
   if (!name || !password) { err.textContent = '請填寫名字和密碼'; return; }
+  if (customRoom && !/^\w{1,20}$/.test(customRoom)) { err.textContent = '房間號限英文數字，最長20字'; return; }
 
   myName = name;
   isHost = true;
@@ -304,7 +307,7 @@ function createRoom() {
   ws = new WebSocket(`${proto}//${location.host}`);
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'create_room', password, playerName: name }));
+    ws.send(JSON.stringify({ type: 'create_room', password, playerName: name, roomId: customRoom || null }));
   };
 
   ws.onmessage = e => {
@@ -391,7 +394,6 @@ function join() {
   const err = document.getElementById('err');
 
   if (!name || !room || !pass) { err.textContent = '請填寫所有欄位'; return; }
-  if (!/^\d{6}$/.test(room)) { err.textContent = '房間號為6位數字'; return; }
 
   myName = name;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -94,7 +94,11 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({ type: 'error', message: '請設定密碼' }));
           return;
         }
-        const roomId = generateRoomId();
+        const roomId = msg.roomId || generateRoomId();
+        if (rooms.has(roomId)) {
+          ws.send(JSON.stringify({ type: 'error', message: '該房間號已被使用' }));
+          return;
+        }
         rooms.set(roomId, {
           password: msg.password,
           host: ws,
