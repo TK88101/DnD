@@ -419,7 +419,14 @@ function createRoom() {
           chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
         }
         break;
+      case 'game_thinking':
+        // 移除之前的思考提示
+        document.querySelectorAll('.thinking').forEach(el => el.remove());
+        out('<span class="thinking d">DM 思考中...</span>');
+        break;
       case 'game_output':
+        // 移除思考提示
+        document.querySelectorAll('.thinking').forEach(el => el.remove());
         outLines(msg.content);
         break;
     }
@@ -520,7 +527,14 @@ function join() {
         err.textContent = msg.message;
         break;
 
+      case 'game_thinking':
+        // 移除之前的思考提示
+        document.querySelectorAll('.thinking').forEach(el => el.remove());
+        out('<span class="thinking d">DM 思考中...</span>');
+        break;
       case 'game_output':
+        // 移除思考提示
+        document.querySelectorAll('.thinking').forEach(el => el.remove());
         outLines(msg.content);
         break;
 

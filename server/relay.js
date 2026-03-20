@@ -3,9 +3,106 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const PORT = process.env.PORT || 8080;
 const MULTIPLAYER_DIR = path.join(__dirname, '..', 'multiplayer');
+const GAME_DIR = path.join(__dirname, '..');
+
+// === Gemini AI 初始化 ===
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+  console.error('錯誤：未設定 GEMINI_API_KEY 環境變量');
+  process.exit(1);
+}
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+// 載入遊戲規則文件作為系統提示
+function loadGameContext(campaign) {
+  const files = ['game.md', 'rules/core.md'];
+  if (campaign) {
+    const ruleFile = `rules/${campaign}.md`;
+    if (fs.existsSync(path.join(GAME_DIR, ruleFile))) files.push(ruleFile);
+
+    const campaignDir = `campaigns/${campaign}`;
+    const campaignFiles = ['world.md', 'races.md', 'backgrounds.md', 'classes.md',
+      'npcs.md', 'enemies.md', 'items.md', 'quests.md'];
+    for (const f of campaignFiles) {
+      const fp = path.join(GAME_DIR, campaignDir, f);
+      if (fs.existsSync(fp)) files.push(`${campaignDir}/${f}`);
+    }
+  }
+
+  let context = '';
+  for (const f of files) {
+    const fp = path.join(GAME_DIR, f);
+    if (fs.existsSync(fp)) {
+      context += `\n\n=== ${f} ===\n` + fs.readFileSync(fp, 'utf8');
+    }
+  }
+  return context;
+}
+
+// 載入副本文件
+function loadDungeon(campaign, dungeonId) {
+  const dungeonDir = path.join(GAME_DIR, 'campaigns', campaign, 'dungeons');
+  if (!fs.existsSync(dungeonDir)) return '';
+  const files = fs.readdirSync(dungeonDir).filter(f => f.endsWith('.md'));
+  for (const f of files) {
+    if (f.replace('.md', '') === dungeonId) {
+      return '\n\n=== 當前副本 ===\n' + fs.readFileSync(path.join(dungeonDir, f), 'utf8');
+    }
+  }
+  return '';
+}
+
+// 每個房間的 AI 對話管理
+class GameSession {
+  constructor(roomId) {
+    this.roomId = roomId;
+    this.campaign = null;
+    this.history = [];
+    this.chat = null;
+    this.saveData = null;
+  }
+
+  async init(campaign) {
+    this.campaign = campaign;
+    const systemPrompt = loadGameContext(campaign);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。嚴格按照以下遊戲規則和世界觀運行遊戲。使用繁體中文。\n\n遵守以下格式規範：\n- 場景描述用沉浸式第二人稱\n- 戰鬥數據用格式化區塊\n- NPC對話用「」標記\n- 每次掷骰顯示完整過程\n- 每次回覆結尾顯示狀態欄\n\n${systemPrompt}`
+    });
+    this.chat = model.startChat({ history: this.history });
+  }
+
+  async send(message) {
+    if (!this.chat) {
+      // 還沒選戰役，先用基礎模式
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-2.0-flash',
+        systemInstruction: `你是一個龍與地下城遊戲的DM。使用繁體中文。玩家正在選擇戰役。\n\n` + loadGameContext(null)
+      });
+      this.chat = model.startChat({ history: this.history });
+    }
+    const result = await this.chat.sendMessage(message);
+    const text = result.response.text();
+    this.history.push({ role: 'user', parts: [{ text: message }] });
+    this.history.push({ role: 'model', parts: [{ text }] });
+    return text;
+  }
+
+  loadDungeonContext(dungeonId) {
+    if (this.campaign) {
+      const extra = loadDungeon(this.campaign, dungeonId);
+      if (extra && this.chat) {
+        this.chat.sendMessage(`[系統] 載入副本資料：${extra}`);
+      }
+    }
+  }
+}
+
+const gameSessions = new Map();
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // 確保 multiplayer 目錄存在
@@ -78,7 +175,7 @@ wss.on('connection', (ws) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw);
@@ -173,11 +270,9 @@ wss.on('connection', (ws) => {
             text: isChat ? actionText : msg.action,
             isAction: !isChat
           });
-          // 發給房主
           if (chatRoom.host && chatRoom.host !== ws && chatRoom.host.readyState === WebSocket.OPEN) {
             chatRoom.host.send(chatMsg);
           }
-          // 發給其他玩家
           chatRoom.players.forEach((playerWs, name) => {
             if (playerWs !== ws && playerWs.readyState === WebSocket.OPEN) {
               playerWs.send(chatMsg);
@@ -185,13 +280,39 @@ wss.on('connection', (ws) => {
           });
         }
 
-        // 非聊天消息才寫入 inbox 給 Claude 處理
+        // 非聊天消息：調用 Gemini AI 處理
         if (!isChat) {
-          writeInbox(ws.roomId, {
-            from: senderName,
-            action: msg.action,
-            timestamp: Date.now()
-          });
+          const roomId = ws.roomId;
+          // 確保有遊戲會話
+          if (!gameSessions.has(roomId)) {
+            gameSessions.set(roomId, new GameSession(roomId));
+          }
+          const session = gameSessions.get(roomId);
+          const prompt = `[玩家 ${senderName}]: ${msg.action}`;
+
+          // 發送 "思考中" 提示
+          const thinkingMsg = JSON.stringify({ type: 'game_thinking', from: 'DM' });
+          const room = rooms.get(roomId);
+          if (room) {
+            if (room.host && room.host.readyState === WebSocket.OPEN) room.host.send(thinkingMsg);
+            room.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(thinkingMsg); });
+          }
+
+          // 調用 Gemini
+          try {
+            const response = await session.send(prompt);
+            const outputMsg = JSON.stringify({ type: 'game_output', content: response });
+            const room2 = rooms.get(roomId);
+            if (room2) {
+              if (room2.host && room2.host.readyState === WebSocket.OPEN) room2.host.send(outputMsg);
+              room2.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(outputMsg); });
+            }
+            console.log(`[AI] 房間 ${roomId} — ${senderName}: ${msg.action.slice(0, 30)}...`);
+          } catch (err) {
+            console.error(`[AI 錯誤]`, err.message);
+            const errMsg = JSON.stringify({ type: 'game_output', content: `⚠ DM 暫時無法回應：${err.message}` });
+            if (ws.readyState === WebSocket.OPEN) ws.send(errMsg);
+          }
         }
         break;
       }
