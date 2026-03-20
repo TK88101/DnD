@@ -520,11 +520,11 @@ wss.on('connection', (ws) => {
           const actionTrimmed = msg.action.trim();
 
           // === 保存遊戲 ===
-          if (/^(保存|存檔|保存遊戲|save)$/i.test(actionTrimmed)) {
+          if (/^(保存|存檔|保存遊戲|存檔遊戲|存遊戲|save)$/i.test(actionTrimmed)) {
             const session = gameSessions.get(roomId);
             if (session) {
               const savePath = session.save(senderName);
-              const saveMsg = JSON.stringify({ type: 'game_output', content: `💾 遊戲已保存！存檔：${senderName}\n下次輸入「讀取 ${senderName}」即可繼續。` });
+              const saveMsg = JSON.stringify({ type: 'game_output', content: `💾 遊戲已保存！存檔：${senderName}\n下次輸入「讀檔 ${senderName}」即可繼續。` });
               if (ws.readyState === WebSocket.OPEN) ws.send(saveMsg);
               console.log(`[存檔] ${senderName} 保存成功 → ${savePath}`);
             } else {
@@ -533,8 +533,8 @@ wss.on('connection', (ws) => {
             }
           }
           // === 讀取存檔 ===
-          else if (/^(讀取|載入|load)\s+/i.test(actionTrimmed)) {
-            const loadName = actionTrimmed.replace(/^(讀取|載入|load)\s+/i, '').trim();
+          else if (/^(讀取|載入|讀檔|讀取遊戲|載入遊戲|讀取存檔|載入存檔|load)\s+/i.test(actionTrimmed)) {
+            const loadName = actionTrimmed.replace(/^(讀取|載入|讀檔|讀取遊戲|載入遊戲|讀取存檔|載入存檔|load)\s+/i, '').trim();
             try {
               const loaded = await GameSession.load(loadName);
               if (loaded) {
@@ -584,6 +584,17 @@ wss.on('connection', (ws) => {
             } catch (err) {
               const loadErrMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
               if (ws.readyState === WebSocket.OPEN) ws.send(loadErrMsg);
+            }
+          }
+          // === 結束遊戲 ===
+          else if (/^(結束遊戲|離開遊戲|退出遊戲|退出|quit|exit)$/i.test(actionTrimmed)) {
+            const session = gameSessions.get(roomId);
+            if (session) {
+              session.save(senderName);
+              broadcastAll(rooms.get(roomId), { type: 'game_output', content: `💾 遊戲已自動保存。\n👋 ${senderName} 結束了遊戲。下次輸入「讀取 ${senderName}」即可繼續。` });
+              console.log(`[結束] ${senderName} 結束遊戲並保存`);
+            } else {
+              ws.send(JSON.stringify({ type: 'game_output', content: '👋 遊戲結束。' }));
             }
           }
           // === 正常遊戲行動（階段狀態機）===
