@@ -58,6 +58,26 @@ function loadDungeon(campaign, dungeonId) {
   return '';
 }
 
+// 後處理：確保 Gemini 回覆包含編號選項
+function ensureOptions(text) {
+  const lines = text.trim().split('\n');
+  const lastLines = lines.slice(-8);
+  const hasOptions = lastLines.some(line => /^\s*\d+[\.\、\s]/.test(line.trim()));
+  if (!hasOptions) {
+    // Gemini 忘記給選項了，根據內容自動補上
+    const isBattle = /HP:.*\/|攻擊|傷害|戰鬥|命中/.test(text);
+    const isVillage = /村莊|集落|鍛冶|商店|貓飯/.test(text);
+    if (isBattle) {
+      text += '\n\n1. 攻擊\n2. 使用技能\n3. 使用物品\n4. 撤退';
+    } else if (isVillage) {
+      text += '\n\n1. 前往鍛冶屋\n2. 前往雜貨店\n3. 吃貓飯\n4. 接受任務\n5. 查看裝備';
+    } else {
+      text += '\n\n1. 繼續前進\n2. 調查周圍\n3. 使用物品\n4. 返回村莊';
+    }
+  }
+  return text;
+}
+
 // 每個房間的 AI 對話管理
 class GameSession {
   constructor(roomId) {
@@ -138,9 +158,12 @@ ${systemPrompt}`
       this.chat = model.startChat({ history: this.history });
     }
     const result = await this.chat.sendMessage(message);
-    const text = result.response.text();
+    let text = result.response.text();
     // Gemini SDK 的 sendMessage 已自動將 user/model 追加到 this.history（共享引用）
     // 不需要手動 push，否則會重複
+
+    // 後處理：確保回覆包含編號選項（Gemini 經常忘記）
+    text = ensureOptions(text);
     return text;
   }
 
