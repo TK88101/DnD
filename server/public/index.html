@@ -341,6 +341,13 @@ function createRoom() {
       case 'player_action':
         out('<span class="b">[' + msg.from + ']</span> ' + msg.action);
         break;
+      case 'chat':
+        if (msg.isAction) {
+          out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+        } else {
+          out('<span class="m">[' + msg.from + ']</span> <span class="d">' + msg.text + '</span>');
+        }
+        break;
       case 'game_output':
         outLines(msg.content);
         break;
@@ -428,6 +435,14 @@ function join() {
 
       case 'game_output':
         outLines(msg.content);
+        break;
+
+      case 'chat':
+        if (msg.isAction) {
+          out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+        } else {
+          out('<span class="m">[' + msg.from + ']</span> <span class="d">' + msg.text + '</span>');
+        }
         break;
 
       case 'kicked':

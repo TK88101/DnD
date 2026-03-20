@@ -160,24 +160,38 @@ wss.on('connection', (ws) => {
       case 'player_action': {
         if (!ws.roomId) return;
 
-        // 主機或玩家都可以發送行動
         const senderName = ws.playerName || msg.playerName || '主機';
-        writeInbox(ws.roomId, {
-          from: senderName,
-          action: msg.action,
-          timestamp: Date.now()
-        });
+        const isChat = msg.action.startsWith('/say ');
+        const actionText = isChat ? msg.action.slice(5) : msg.action;
 
-        // 如果是玩家發送的，通知主機
-        if (!ws.isHost) {
-          const actionRoom = rooms.get(ws.roomId);
-          if (actionRoom && actionRoom.host && actionRoom.host.readyState === WebSocket.OPEN) {
-            actionRoom.host.send(JSON.stringify({
-              type: 'player_action',
-              from: senderName,
-              action: msg.action
-            }));
+        // 即時廣播給所有人（隊友聊天）
+        const chatRoom = rooms.get(ws.roomId);
+        if (chatRoom) {
+          const chatMsg = JSON.stringify({
+            type: 'chat',
+            from: senderName,
+            text: isChat ? actionText : msg.action,
+            isAction: !isChat
+          });
+          // 發給房主
+          if (chatRoom.host && chatRoom.host !== ws && chatRoom.host.readyState === WebSocket.OPEN) {
+            chatRoom.host.send(chatMsg);
           }
+          // 發給其他玩家
+          chatRoom.players.forEach((playerWs, name) => {
+            if (playerWs !== ws && playerWs.readyState === WebSocket.OPEN) {
+              playerWs.send(chatMsg);
+            }
+          });
+        }
+
+        // 非聊天消息才寫入 inbox 給 Claude 處理
+        if (!isChat) {
+          writeInbox(ws.roomId, {
+            from: senderName,
+            action: msg.action,
+            timestamp: Date.now()
+          });
         }
         break;
       }
