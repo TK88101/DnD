@@ -758,11 +758,59 @@ wss.on('connection', (ws) => {
                   currentRoom.faction = creator.raceData.faction;
                 }
 
-                // 職業選完（step 進入 stats），換下一個人選種族/職業
-                if (creator.step === 'stats') {
+                // 角色在 creating_turns 階段就完成了（自動屬性分配的戰役如 MH）
+                if (result.done && result.character) {
+                  const savePath = path.join(GAME_DIR, 'saves', `${senderName}.json`);
+                  fs.writeFileSync(savePath, JSON.stringify(result.character, null, 2), 'utf8');
+                  console.log(`[角色] ${result.character.character.race} ${result.character.character.class} "${result.character.meta.name}" 創建完成`);
+                  charCreators.delete(creatorKey);
+                  currentRoom.characters.set(senderName, result.character);
+                  broadcastAll(currentRoom, { type: 'game_output', content: `🎮 ${senderName} 的角色「${result.character.meta.name}」（${result.character.character.race} ${result.character.character.class}）已就緒！` });
+
+                  // 推進到下一個玩家或啟動遊戲
                   currentRoom.currentCreateIdx++;
                   if (currentRoom.currentCreateIdx < currentRoom.createOrder.length) {
-                    // 下一個人開始選
+                    const nextName = currentRoom.createOrder[currentRoom.currentCreateIdx];
+                    const nextKey = `${roomId}_${nextName}`;
+                    const nextCreator = new CharacterCreator(nextName, currentRoom.campaign, currentRoom.faction);
+                    charCreators.set(nextKey, nextCreator);
+                    const raceResult = nextCreator.process('show');
+                    broadcastAll(currentRoom, { type: 'game_output', content: `\n🎭 輪到 ${nextName} 選擇武器！\n${raceResult.text}` });
+                    broadcastAll(currentRoom, { type: 'turn_info', currentPlayer: nextName });
+                  } else if (currentRoom.characters.size >= totalPlayers) {
+                    // 所有人完成！啟動遊戲
+                    currentRoom.phase = 'playing';
+                    currentRoom.gameStarted = true;
+                    currentRoom.turnOrder = [...currentRoom.createOrder];
+                    currentRoom.currentTurn = 0;
+
+                    let charSummary = '[系統] 所有玩家角色創建完成。以下是隊伍成員：\n\n';
+                    for (const [pName, char] of currentRoom.characters) {
+                      charSummary += `=== 玩家：${pName} ===\n`;
+                      charSummary += `角色名：${char.meta.name}\n`;
+                      charSummary += `種族：${char.character.race}（${char.character.faction}）\n`;
+                      charSummary += `職業：${char.character.class}\n`;
+                      charSummary += `等級：1\n`;
+                      charSummary += `HP：${char.character.hp}/${char.character.max_hp} | AC：${char.character.ac}\n`;
+                      charSummary += `裝備：${char.character.inventory.join('、')}\n\n`;
+                    }
+                    charSummary += `請展示起始場景，開始冒險！\n`;
+
+                    const session = gameSessions.get(roomId);
+                    try {
+                      broadcastAll(currentRoom, { type: 'game_thinking', from: 'DM' });
+                      const response = await session.send(charSummary);
+                      broadcastAll(currentRoom, { type: 'game_output', content: response });
+                      broadcastTurnInfo(currentRoom);
+                    } catch (err) {
+                      console.error(`[AI 錯誤] ${err.message}`);
+                    }
+                  }
+                }
+                // 職業選完（step 進入 stats），換下一個人選種族/職業（傳統戰役）
+                else if (creator.step === 'stats') {
+                  currentRoom.currentCreateIdx++;
+                  if (currentRoom.currentCreateIdx < currentRoom.createOrder.length) {
                     const nextName = currentRoom.createOrder[currentRoom.currentCreateIdx];
                     const nextKey = `${roomId}_${nextName}`;
                     const nextCreator = new CharacterCreator(nextName, currentRoom.campaign, currentRoom.faction);
@@ -771,7 +819,6 @@ wss.on('connection', (ws) => {
                     broadcastAll(currentRoom, { type: 'game_output', content: `\n🎭 輪到 ${nextName} 選擇種族和職業！\n${raceResult.text}` });
                     broadcastAll(currentRoom, { type: 'turn_info', currentPlayer: nextName });
                   } else {
-                    // 所有人都選完種族和職業，進入同時分配屬性
                     currentRoom.phase = 'creating_stats';
                     broadcastAll(currentRoom, { type: 'game_output', content: '\n═══════════════════════════════════════\n所有人的種族和職業已選定！\n現在所有人同時分配屬性和命名角色。\n═══════════════════════════════════════' });
                     broadcastAll(currentRoom, { type: 'turn_info', currentPlayer: '__all__' });
