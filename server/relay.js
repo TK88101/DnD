@@ -9,6 +9,7 @@ const { CharacterCreator, attackRoll, skillCheck, roll, modifier, d20 } = requir
 const PORT = process.env.PORT || 8080;
 const MULTIPLAYER_DIR = path.join(__dirname, '..', 'multiplayer');
 const GAME_DIR = path.join(__dirname, '..');
+const AFK_TIMEOUT = 60000; // 60 秒無操作標記為暫離
 
 // === Gemini AI 初始化 ===
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -83,6 +84,8 @@ class GameSession {
 - NPC對話用「」標記
 - 每次掷骰顯示完整過程：🎲 d20(結果) + 加值 = 總計 vs 目標 → 結果
 - 每次回覆結尾顯示狀態欄
+- NPC隊友的名字前必須加上 [NPC] 標記，例如 [NPC]吉安娜、[NPC]薩爾
+- 狀態欄中必須明確區分玩家角色和NPC隊友，NPC名字始終帶 [NPC] 前綴
 
 【遊戲資料文件（必須嚴格遵循）】
 ${systemPrompt}`
@@ -254,9 +257,36 @@ function startTurnBasedCreation(roomId, room) {
 }
 
 // 推進回合
-function advanceTurn(room) {
+function advanceTurn(room, roomId) {
   room.currentTurn = (room.currentTurn + 1) % room.turnOrder.length;
   broadcastTurnInfo(room);
+  // 如果下個玩家暫離，自動 NPC 行動
+  if (roomId && room.afkPlayers && room.turnOrder.length > 0) {
+    const nextPlayer = room.turnOrder[room.currentTurn % room.turnOrder.length];
+    if (room.afkPlayers.has(nextPlayer)) {
+      setTimeout(() => handleAfkTurn(roomId, room, nextPlayer), 2000);
+    }
+  }
+}
+
+async function handleAfkTurn(roomId, room, afkPlayerName) {
+  const session = gameSessions.get(roomId);
+  if (!session || room.phase !== 'playing') return;
+  if (!room.afkPlayers.has(afkPlayerName)) return; // 已經回來了
+
+  const char = room.characters.get(afkPlayerName);
+  const charName = char ? char.meta.name : afkPlayerName;
+  const prompt = `[系統] 玩家 ${afkPlayerName} 暫離中，請為其角色「${charName}」做出合理的 NPC 自動行動。根據角色的性格和當前情境做出適當決定。`;
+
+  try {
+    broadcastAll(room, { type: 'game_thinking', from: 'DM' });
+    const response = await session.send(prompt);
+    broadcastAll(room, { type: 'game_output', content: response });
+    advanceTurn(room, roomId);
+  } catch (err) {
+    console.error(`[AI 錯誤] AFK 自動行動失敗：${err.message}`);
+    advanceTurn(room, roomId);
+  }
 }
 
 function broadcast(room, message, excludeWs) {
@@ -344,7 +374,8 @@ wss.on('connection', (ws) => {
           rolls: new Map(),     // 當前掷骰結果
           rollWinner: null,     // 掷骰贏家
           createOrder: [],      // 角色創建順序（掷骰排序）
-          currentCreateIdx: 0   // 當前創建角色的玩家索引
+          currentCreateIdx: 0,  // 當前創建角色的玩家索引
+          afkPlayers: new Set()  // 暫離的玩家
         });
         ws.roomId = roomId;
         ws.isHost = true;
@@ -424,8 +455,29 @@ wss.on('connection', (ws) => {
       // === 玩家發送行動 ===
       case 'player_action': {
         if (!ws.roomId) return;
+        ws.lastActivity = Date.now();
 
         const senderName = ws.playerName || msg.playerName || '主機';
+
+        // 暫離回歸處理（任何行動自動解除暫離）
+        const afkRoom = rooms.get(ws.roomId);
+        if (afkRoom && afkRoom.afkPlayers && afkRoom.afkPlayers.has(senderName)) {
+          afkRoom.afkPlayers.delete(senderName);
+          broadcastAll(afkRoom, { type: 'back_notice', playerName: senderName, message: `▶ ${senderName} 回來了！角色控制權歸還玩家` });
+          if (afkRoom.phase === 'playing') {
+            const session = gameSessions.get(ws.roomId);
+            if (session) {
+              const char = afkRoom.characters.get(senderName);
+              const charName = char ? char.meta.name : senderName;
+              session.send(`[系統] 玩家 ${senderName} 回歸遊戲，恢復對角色「${charName}」的控制。`).catch(() => {});
+            }
+          }
+          console.log(`[回歸] ${senderName} 在房間 ${ws.roomId} 回歸`);
+          if (/^(\/back|\/回來|回來了|我回來了)$/i.test(msg.action.trim())) break;
+        } else if (/^(\/back|\/回來|回來了|我回來了)$/i.test(msg.action.trim())) {
+          ws.send(JSON.stringify({ type: 'game_output', content: '你沒有在暫離狀態。' }));
+          break;
+        }
         const isChat = msg.action.startsWith('/say ');
         const actionText = isChat ? msg.action.slice(5) : msg.action;
 
@@ -757,7 +809,7 @@ wss.on('connection', (ws) => {
                 try {
                   const response = await session.send(prompt);
                   broadcastAll(currentRoom, { type: 'game_output', content: response });
-                  advanceTurn(currentRoom);
+                  advanceTurn(currentRoom, roomId);
                   console.log(`[AI] 房間 ${roomId} — 回覆完成（${response.length}字）`);
                 } catch (err) {
                   console.error(`[AI 錯誤] ${err.message}`);
@@ -921,6 +973,32 @@ setInterval(() => {
     ws.ping();
   });
 }, 30000);
+
+// AFK 暫離偵測（每 15 秒檢查一次）
+setInterval(() => {
+  const now = Date.now();
+  rooms.forEach((room, roomId) => {
+    if (room.phase !== 'playing') return;
+    const checkAfk = (playerWs, playerName) => {
+      if (!playerName) return;
+      if (!playerWs.lastActivity) { playerWs.lastActivity = now; return; }
+      if (room.afkPlayers.has(playerName)) return;
+      if (now - playerWs.lastActivity >= AFK_TIMEOUT) {
+        room.afkPlayers.add(playerName);
+        broadcastAll(room, { type: 'afk_notice', playerName, message: `⏸ ${playerName} 暫離，角色由 NPC 自動接手` });
+        console.log(`[暫離] ${playerName} 在房間 ${roomId} 暫離（閒置 ${Math.round((now - playerWs.lastActivity) / 1000)}s）`);
+        if (room.turnOrder.length > 0) {
+          const currentPlayer = room.turnOrder[room.currentTurn % room.turnOrder.length];
+          if (currentPlayer === playerName) {
+            setTimeout(() => handleAfkTurn(roomId, room, playerName), 2000);
+          }
+        }
+      }
+    };
+    if (room.host && room.host.playerName) checkAfk(room.host, room.host.playerName);
+    room.players.forEach((pw, name) => checkAfk(pw, name));
+  });
+}, 15000);
 
 // 監聽 outbox 文件變化，自動廣播給玩家
 fs.watch(MULTIPLAYER_DIR, (eventType, filename) => {

@@ -380,7 +380,7 @@ function startHeartbeat() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'ping' }));
     }
-  }, 25000);
+  }, 15000);
 }
 
 function stopHeartbeat() {
@@ -495,7 +495,7 @@ function hostMessageHandler(e) {
       break;
     case 'chat':
       if (msg.isAction) {
-        chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+        out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
       } else {
         chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
       }
@@ -513,6 +513,12 @@ function hostMessageHandler(e) {
       break;
     case 'host_disconnected':
       out('<span class="y">⚠ ' + msg.message + '</span>');
+      break;
+    case 'afk_notice':
+      out('<span class="y">' + msg.message + '</span>');
+      break;
+    case 'back_notice':
+      out('<span class="g">' + msg.message + '</span>');
       break;
     case 'pong':
       break;
@@ -648,7 +654,7 @@ function playerMessageHandler(e) {
 
     case 'chat':
       if (msg.isAction) {
-        chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+        out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
       } else {
         chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
       }
@@ -672,6 +678,13 @@ function playerMessageHandler(e) {
 
     case 'turn_info':
       handleTurnInfo(msg.currentPlayer);
+      break;
+
+    case 'afk_notice':
+      out('<span class="y">' + msg.message + '</span>');
+      break;
+    case 'back_notice':
+      out('<span class="g">' + msg.message + '</span>');
       break;
 
     case 'pong':

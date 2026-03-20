@@ -28,6 +28,7 @@ function modifier(stat) {
 
 // === 點數購買表 ===
 const POINT_COST = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
+const STAT_NAMES = { STR: '力量', DEX: '敏捷', CON: '體質', INT: '智力', WIS: '感知', CHA: '魅力' };
 const TOTAL_POINTS = 27;
 
 function validatePointBuy(stats) {
@@ -189,7 +190,7 @@ class CharacterCreator {
     text += `  12→13(1點) 13→14(2點) 14→15(2點)\n`;
     text += `  最高只能買到 15，種族加成之後可超過 15\n\n`;
     text += `請用以下格式分配（用空格分隔）：\n`;
-    text += `  STR DEX CON INT WIS CHA\n`;
+    text += `  力量 敏捷 體質 智力 感知 魅力\n`;
     text += `  例如：15 10 14 8 12 10\n`;
     text += `\n建議（${className}主屬性 ${classData.primary}）：把點數集中在主屬性上\n`;
     text += `───────────────────────────────────────`;
@@ -222,7 +223,7 @@ class CharacterCreator {
     this.finalStats = finalStats;
     this.step = 'name';
 
-    const bonusStr = Object.entries(this.raceData.bonus).map(([k, v]) => `${k}+${v}`).join(', ');
+    const bonusStr = Object.entries(this.raceData.bonus).map(([k, v]) => `${STAT_NAMES[k] || k}+${v}`).join(', ');
 
     let text = `\n✅ 屬性分配完成！（花費 ${result.spent}/${TOTAL_POINTS} 點）\n\n`;
     text += `───────────────────────────────────────\n`;
@@ -232,7 +233,7 @@ class CharacterCreator {
       const bonus = this.raceData.bonus[k] || 0;
       const final = finalStats[k];
       const mod = modifier(final);
-      text += `  ${k.padEnd(6)} ${String(base).padStart(4)}  ${bonus > 0 ? '+' + bonus : ' 0'}        ${String(final).padStart(3)}   ${mod >= 0 ? '+' : ''}${mod}\n`;
+      text += `  ${STAT_NAMES[k].padEnd(4)} ${String(base).padStart(4)}  ${bonus > 0 ? '+' + bonus : ' 0'}        ${String(final).padStart(3)}   ${mod >= 0 ? '+' : ''}${mod}\n`;
     }
     text += `───────────────────────────────────────\n\n`;
     text += `最後一步——為你的角色取個名字：`;
@@ -309,12 +310,12 @@ class CharacterCreator {
     text += `  ${this.raceData.faction} 陣營\n`;
     text += `───────────────────────────────────────\n`;
     text += `  HP: ${hp}/${hp} | AC: ${ac}\n`;
-    text += `  STR: ${this.finalStats.STR}(${modifier(this.finalStats.STR) >= 0 ? '+' : ''}${modifier(this.finalStats.STR)}) `;
-    text += `DEX: ${this.finalStats.DEX}(${modifier(this.finalStats.DEX) >= 0 ? '+' : ''}${modifier(this.finalStats.DEX)}) `;
-    text += `CON: ${this.finalStats.CON}(${modifier(this.finalStats.CON) >= 0 ? '+' : ''}${modifier(this.finalStats.CON)})\n`;
-    text += `  INT: ${this.finalStats.INT}(${modifier(this.finalStats.INT) >= 0 ? '+' : ''}${modifier(this.finalStats.INT)}) `;
-    text += `WIS: ${this.finalStats.WIS}(${modifier(this.finalStats.WIS) >= 0 ? '+' : ''}${modifier(this.finalStats.WIS)}) `;
-    text += `CHA: ${this.finalStats.CHA}(${modifier(this.finalStats.CHA) >= 0 ? '+' : ''}${modifier(this.finalStats.CHA)})\n`;
+    text += `  力量: ${this.finalStats.STR}(${modifier(this.finalStats.STR) >= 0 ? '+' : ''}${modifier(this.finalStats.STR)}) `;
+    text += `敏捷: ${this.finalStats.DEX}(${modifier(this.finalStats.DEX) >= 0 ? '+' : ''}${modifier(this.finalStats.DEX)}) `;
+    text += `體質: ${this.finalStats.CON}(${modifier(this.finalStats.CON) >= 0 ? '+' : ''}${modifier(this.finalStats.CON)})\n`;
+    text += `  智力: ${this.finalStats.INT}(${modifier(this.finalStats.INT) >= 0 ? '+' : ''}${modifier(this.finalStats.INT)}) `;
+    text += `感知: ${this.finalStats.WIS}(${modifier(this.finalStats.WIS) >= 0 ? '+' : ''}${modifier(this.finalStats.WIS)}) `;
+    text += `魅力: ${this.finalStats.CHA}(${modifier(this.finalStats.CHA) >= 0 ? '+' : ''}${modifier(this.finalStats.CHA)})\n`;
     text += `───────────────────────────────────────\n`;
     text += `  種族特長：${this.raceData.trait}\n`;
     text += `  裝備：${this.classData.starter_weapon} | ${this.classData.starter_armor}\n`;
