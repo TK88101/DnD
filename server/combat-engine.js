@@ -1,7 +1,7 @@
 const { roll, d20, modifier, attackRoll, proficiencyBonus } = require('./game-engine');
 
 class CombatSession {
-  constructor(players, enemies, difficulty) {
+  constructor(players, enemies, difficulty, options = {}) {
     this.players = players.map(p => ({ ...p, side: 'player' }));
     this.enemies = enemies.map(e => ({ ...e, side: 'enemy' }));
     this.difficulty = difficulty || { hpMult: 1, atkMod: 0 };
@@ -13,6 +13,9 @@ class CombatSession {
     this.dots = [];
     this.summons = [];
     this._lastOptions = null;
+    // 副本模式选项
+    this.disableCoopMechanics = options.disableCoopMechanics || false;
+    this.npcCompanions = options.npcCompanions || []; // NPCCompanion 实例引用
   }
 
   initCombat() {
@@ -283,6 +286,44 @@ class CombatSession {
     return result;
   }
 
+  // NPC 队友自动回合：由代码控制行为，基于职业+性格双轴
+  executeNPCCompanionAI(participant) {
+    // 找到对应的 NPCCompanion 实例
+    const companion = this.npcCompanions.find(c => `[NPC]${c.name}` === participant.name);
+    if (!companion) {
+      // fallback: 当作普通玩家 AI（攻击血最低的敌人）
+      return this.executeMonsterAI({ ...participant, side: 'enemy' });
+    }
+
+    const allies = this.participants.filter(p => p.side === 'player' && p.hp > 0);
+    const enemies = this.participants.filter(p => p.side === 'enemy' && p.hp > 0);
+
+    if (enemies.length === 0) {
+      return { actor: participant.name, action: '无行动', summary: `${participant.name} 没有可攻击的目标`, effects: [] };
+    }
+
+    // 同步 HP/MP 到 companion 实例
+    companion.hp = participant.hp;
+    companion.mp = participant.mp;
+
+    // 代码控制决策
+    const decision = companion.chooseCombatAction({ allies, enemies });
+
+    if (!decision || !decision.target) {
+      // fallback: 近战攻击血最低的敌人
+      const fallbackTarget = enemies.reduce((a, b) => a.hp < b.hp ? a : b);
+      return this.executeAction(participant, { type: 'melee', target: fallbackTarget.name });
+    }
+
+    const result = this.executeAction(participant, decision);
+
+    // 同步回 participant
+    participant.hp = companion.hp;
+    participant.mp = companion.mp;
+
+    return result;
+  }
+
   processDOTs() {
     const results = [];
     this.dots = this.dots.filter(dot => {
@@ -416,7 +457,7 @@ class CombatSession {
     return `${result.actor} 使用了 ${result.action}`;
   }
 
-  // Static difficulty table (mirrors relay.js getDifficulty)
+  // 野外难度表（按玩家人数缩放，保持向后兼容）
   static getDifficulty(playerCount) {
     const table = {
       1: { hpMult: 0.5, atkMod: -2 },
@@ -429,6 +470,31 @@ class CombatSession {
       8: { hpMult: 3.0, atkMod: 4 },
     };
     return table[Math.min(Math.max(playerCount, 1), 8)];
+  }
+
+  // 副本难度表（5人基准，6-8人递增缩放）
+  static getDungeonDifficulty(mode, playerCount) {
+    // 纯 Solo：×0.5 + 取消配合机制
+    if (mode === 'solo') {
+      return { hpMult: 0.5, atkMod: -2, disableCoopMechanics: true };
+    }
+    // NPC 队友模式：标准难度
+    if (mode === 'npc_team') {
+      return { hpMult: 1.0, atkMod: 0, disableCoopMechanics: false };
+    }
+    // 多人模式：5人基准，超出按比例递增
+    const table = {
+      1: { hpMult: 0.5, atkMod: -2 },
+      2: { hpMult: 0.7, atkMod: -1 },
+      3: { hpMult: 0.85, atkMod: 0 },
+      4: { hpMult: 0.95, atkMod: 0 },
+      5: { hpMult: 1.0, atkMod: 0 },
+      6: { hpMult: 1.15, atkMod: 1 },
+      7: { hpMult: 1.30, atkMod: 2 },
+      8: { hpMult: 1.45, atkMod: 3 },
+    };
+    const clamped = Math.min(Math.max(playerCount, 1), 8);
+    return { ...table[clamped], disableCoopMechanics: false };
   }
 }
 
