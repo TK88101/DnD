@@ -167,8 +167,20 @@ function ensureOptions(text) {
   const options = extractOptions(text);
   if (Object.keys(options).length > 0) return text;
 
-  // 沒有選項，附加預設選項
-  return text + '\n\n1. 繼續\n2. 查看狀態\n3. 查看物品';
+  // 沒有選項，根據場景上下文附加合適的選項
+  const isBattle = /HP:.*\/|攻擊|傷害|戰鬥|命中/.test(text);
+  const isVillage = /村莊|集落|鍛冶|商店|貓飯|旅館|客棧/.test(text);
+  const isShop = /雜貨店|購買|商店|💰.*\d+g/.test(text);
+
+  if (isBattle) {
+    return text + '\n\n1. 攻擊\n2. 使用技能\n3. 使用物品\n4. 撤退';
+  } else if (isShop) {
+    return text + '\n\n1. 購買物品\n2. 出售物品\n3. 離開商店';
+  } else if (isVillage) {
+    return text + '\n\n1. 前往商店\n2. 休息恢復\n3. 接受任務\n4. 查看裝備';
+  } else {
+    return text + '\n\n1. 繼續前進\n2. 調查周圍\n3. 使用物品\n4. 返回';
+  }
 }
 
 /**

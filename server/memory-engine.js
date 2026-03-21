@@ -118,15 +118,23 @@ class MemoryEngine {
       charCount += line.length;
     }
 
-    // 5. 永遠附加最近 3 條記憶（無論相關性）
-    const recentSection = '\n[最近事件]\n';
+    // 5. 附加最近 3 條記憶（無論相關性），但計入 token 預算
     const recent = this.memories.slice(-3);
-    let recentText = recentSection;
-    for (const mem of recent) {
-      recentText += `• ${mem.summary}\n`;
+    if (recent.length > 0) {
+      const recentHeader = '\n[最近事件]\n';
+      if (charCount + recentHeader.length <= maxTokens) {
+        result += recentHeader;
+        charCount += recentHeader.length;
+        for (const mem of recent) {
+          const line = `• ${mem.summary}\n`;
+          if (charCount + line.length > maxTokens) break;
+          result += line;
+          charCount += line.length;
+        }
+      }
     }
 
-    return result + recentText;
+    return result;
   }
 
   // ==================== 記憶搜索 ====================
@@ -275,8 +283,16 @@ class MemoryEngine {
     others.sort((a, b) => b.importance - a.importance || b.turn - a.turn);
     const keepOthers = others.slice(0, Math.floor(others.length / 2));
 
-    this.memories = [...important, ...keepOthers, ...keepRecent];
-    this.memories.sort((a, b) => a.turn - b.turn); // 按時間排序
+    let merged = [...important, ...keepOthers, ...keepRecent];
+
+    // 如果 important + keepRecent 已經超過 maxMemories，按 importance 降序 + 時間降序裁剪
+    if (merged.length > this.maxMemories) {
+      merged.sort((a, b) => b.importance - a.importance || b.turn - a.turn);
+      merged = merged.slice(0, this.maxMemories);
+    }
+
+    merged.sort((a, b) => a.turn - b.turn); // 按時間排序
+    this.memories = merged;
   }
 
   // ==================== 序列化 ====================
