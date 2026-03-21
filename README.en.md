@@ -93,6 +93,12 @@ DnD/
 │   └── monsterhunter.md      # MH-specific rule overrides (cart/forging/part breaks)
 ├── campaigns/
 │   ├── warcraft/              # World of Warcraft campaign
+│   │   ├── classes.md         #   9 classes w/ skills+talents (Classic 1.12 faithful)
+│   │   ├── quests.md          #   30 main quests + 8 zone side quest lines + NPC recruitment
+│   │   ├── tier-sets.md       #   T1-T3 raid tier sets (36 sets)
+│   │   ├── enemies.md         #   Monster data tables
+│   │   ├── items.md           #   Equipment & item tables
+│   │   └── dungeons/          #   14 dungeon full designs
 │   ├── cthulhu/               # Cthulhu Mythos campaign
 │   ├── bloodborne/            # Bloodborne campaign
 │   └── monsterhunter/         # Monster Hunter campaign

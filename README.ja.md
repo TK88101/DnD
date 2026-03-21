@@ -93,6 +93,12 @@ DnD/
 │   └── monsterhunter.md      # MH専用ルール上書き（ネコタク/鍛冶/部位破壊）
 ├── campaigns/
 │   ├── warcraft/              # ワールド・オブ・ウォークラフト キャンペーン
+│   │   ├── classes.md         #   9職業スキル+タレント（クラシック1.12準拠）
+│   │   ├── quests.md          #   メイン30章+8地域サブクエスト+NPC募集
+│   │   ├── tier-sets.md       #   T1-T3レイドティアセット（36セット）
+│   │   ├── enemies.md         #   モンスターデータテーブル
+│   │   ├── items.md           #   装備＆アイテムテーブル
+│   │   └── dungeons/          #   14ダンジョン完全設計
 │   ├── cthulhu/               # クトゥルフ神話 キャンペーン
 │   ├── bloodborne/            # ブラッドボーン キャンペーン
 │   └── monsterhunter/         # モンスターハンター キャンペーン
