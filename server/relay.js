@@ -196,21 +196,21 @@ class GameSession {
 - 法術型職業必須顯示 MP，施放技能後 MP 要正確扣除，脫戰後逐漸恢復
 - 召喚類技能（如召喚小鬼）是持續性的，可以在戰前施放，不佔戰鬥回合
 
-【戰鬥規則 — 每次戰鬥行動必須嚴格執行】
-- 玩家選擇攻擊或使用技能時，你必須立刻執行完整的攻擊判定流程，不能只描述「觀察」或「思考」然後重複給同樣的選項
-- 攻擊判定流程（每次必須完整執行）：
-  1. 掷攻擊骰：🎲 d20(結果) + 攻擊調整值 = 總計
-  2. 對比目標 AC：總計 ≥ AC → 命中，否則未命中
-  3. 命中則掷傷害骰：武器/技能傷害骰 + 屬性調整值 = 傷害
-  4. 扣除目標 HP，顯示剩餘 HP
-  5. 自然20 = 暴擊（傷害骰翻倍），自然1 = 失手
-- 怪物的回合也必須執行攻擊判定（掷骰 → 對比玩家 AC → 算傷害 → 扣 HP）
-- 禁止跳過攻擊判定！玩家選了攻擊就必須掷骰算傷害，不能用「你仔細觀察」「你思考下一步」之類的描述來拖延
-- 【絕對禁止】玩家輸入的數字對應你上一次回覆中同編號的選項。玩家輸入「11」就是執行你列出的第 11 項，不是第 10 項也不是第 12 項。你必須回頭核對自己上次列出的選項內容，嚴格按編號執行對應的那一項。不能替換、不能跳號、不能混淆。如果你給了 11. 捕獲用麻醉球(30g)，玩家輸入 11，你就必須賣捕獲用麻醉球並扣 30g，不能賣別的東西
-- 每回合結構：玩家行動 → 執行判定 → 怪物行動 → 執行判定 → 更新狀態欄 → 給出新選項
-- 怪物 HP 必須在戰鬥中持續追蹤並顯示（例如：土砂龍 HP: 45/75）
-- MH 戰役：獵人 HP 歸零 = 立刻貓車（見 rules/monsterhunter.md），不要進入瀕死狀態
-- MH 戰役貓車後：獵人滿血復活，但怪物不回血！怪物 HP 和部位破壞保持貓車前的狀態不變
+【戰鬥觸發規則 — 最重要】
+- 你不再負責執行戰鬥判定！所有骰子、傷害、HP 由服務器代碼處理
+- 當劇情中出現戰鬥遭遇時（敵人出現、怪物攻擊、被伏擊等），你必須在回覆的最後一行加上戰鬥觸發標記：
+  [BATTLE:怪物名x數量,怪物名x數量]
+  例如：[BATTLE:飢餓野狼x2] 或 [BATTLE:迪菲亞盜賊x3,迪菲亞法師x1]
+- 怪物名必須與 enemies.md 中的名稱完全一致
+- 觸發標記之前正常寫劇情描述（敵人如何出現的場景），但不要寫戰鬥過程
+- 你只負責：場景描寫、NPC對話、劇情推進、任務引導
+- 戰鬥過程（擲骰、傷害、回合）全部由代碼自動處理，你不需要也不應該去寫
+- 【絕對禁止】自己模擬擲骰或計算傷害，這會導致數值不一致
+- 戰鬥結束後，代碼會告知你結果（勝利/失敗、獲得的EXP和物品），你根據結果繼續劇情
+
+【選項編號規則 — 絕對禁止違反】
+- 玩家輸入的數字對應你上一次回覆中同編號的選項
+- 不能替換、不能跳號、不能混淆
 
 【任務與升級規則 — 必須嚴格執行】
 - 完成任務時必須立即顯示獎勵明細：「✅ 任務完成！獲得 [X] EXP、[Y]g、[物品名]」
@@ -279,8 +279,17 @@ ${systemPrompt}`
     // Gemini SDK 的 sendMessage 已自動將 user/model 追加到 this.history（共享引用）
     // 不需要手動 push，否則會重複
 
+    // 攔截戰鬥觸發標記 [BATTLE:怪物名x數量,...]
+    const battleMatch = text.match(/\[BATTLE:(.+?)\]/);
+    if (battleMatch) {
+      text = text.replace(/\[BATTLE:.+?\]/, '').trim();
+      this._pendingBattle = battleMatch[1]; // 存起來，由 relay 的 player_action 處理
+    }
+
     // 後處理：確保回覆包含編號選項（Gemini 經常忘記）
-    text = ensureOptions(text);
+    if (!this._pendingBattle) {
+      text = ensureOptions(text);
+    }
 
     // 從回覆中解析遊戲狀態，更新外掛記憶體
     this.parseState(text);
@@ -645,6 +654,39 @@ function writeInbox(roomId, message) {
 function clearInbox(roomId) {
   const inboxPath = path.join(MULTIPLAYER_DIR, `inbox-${roomId}.json`);
   fs.writeFileSync(inboxPath, '[]', 'utf8');
+}
+
+// === 戰鬥引擎：解析 [BATTLE:...] 標記 ===
+function parseBattleTag(battleStr, monsterDb) {
+  // battleStr 格式：「飢餓野狼x2,迪菲亞盜賊x1」
+  const gen = new EncounterGenerator(monsterDb);
+  const enemies = [];
+  const parts = battleStr.split(/[,，]/);
+  for (const part of parts) {
+    const match = part.trim().match(/^(.+?)x(\d+)$/);
+    if (match) {
+      const name = match[1].trim();
+      const count = parseInt(match[2]);
+      const template = monsterDb.get(name);
+      if (template) {
+        for (let i = 0; i < count; i++) {
+          const instance = gen.instantiate(template);
+          instance.name = count > 1 ? `${template.name}${String.fromCharCode(65 + i)}` : template.name;
+          enemies.push(instance);
+        }
+      } else {
+        console.log(`[戰鬥] 未知怪物: ${name}`);
+      }
+    } else {
+      // 沒有 x數量，視為 x1
+      const name = part.trim();
+      const template = monsterDb.get(name);
+      if (template) {
+        enemies.push(gen.instantiate(template));
+      }
+    }
+  }
+  return enemies;
 }
 
 // === 戰鬥引擎：Gemini 意圖解析 ===
@@ -1052,6 +1094,23 @@ wss.on('connection', (ws) => {
             } catch (err) {
               const loadErrMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
               if (ws.readyState === WebSocket.OPEN) ws.send(loadErrMsg);
+            }
+          }
+          // === 手動觸發戰鬥 ===
+          else if (/^\/fight$/i.test(actionTrimmed)) {
+            const fightRoom = rooms.get(roomId);
+            if (fightRoom && fightRoom.campaign) {
+              const monsterDb = monsterDatabases.get(fightRoom.campaign);
+              if (monsterDb) {
+                const gen = new EncounterGenerator(monsterDb);
+                const level = parseInt(fightRoom.characters?.values()?.next()?.value?.character?.level) || 1;
+                const enemies = gen.generateRandom(level, fightRoom.characters?.size || 1);
+                if (enemies.length > 0) {
+                  await triggerCombat(roomId, fightRoom, enemies);
+                } else {
+                  ws.send(JSON.stringify({ type: 'game_output', content: '⚠ 附近沒有發現敵人。' }));
+                }
+              }
             }
           }
           // === 雜貨店（代碼控制）===
@@ -1518,6 +1577,21 @@ wss.on('connection', (ws) => {
                   broadcastAll(currentRoom, { type: 'game_output', content: response });
                   advanceTurn(currentRoom, roomId);
                   console.log(`[AI] 房間 ${roomId} — 回覆完成（${response.length}字）`);
+
+                  // 檢查是否觸發戰鬥
+                  if (session._pendingBattle) {
+                    const battleStr = session._pendingBattle;
+                    session._pendingBattle = null;
+                    const monsterDb = monsterDatabases.get(currentRoom.campaign);
+                    if (monsterDb) {
+                      const enemies = parseBattleTag(battleStr, monsterDb);
+                      if (enemies.length > 0) {
+                        await triggerCombat(roomId, currentRoom, enemies);
+                      } else {
+                        console.log(`[戰鬥] 無法解析怪物: ${battleStr}`);
+                      }
+                    }
+                  }
                 } catch (err) {
                   console.error(`[AI 錯誤] ${err.message}`);
                   ws.send(JSON.stringify({ type: 'game_output', content: `⚠ DM 暫時無法回應：${err.message}` }));
