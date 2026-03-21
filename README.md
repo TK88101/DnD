@@ -93,6 +93,12 @@ DnD/
 │   └── monsterhunter.md      # MH 專用規則覆蓋（貓車/鍛造/部位破壞）
 ├── campaigns/
 │   ├── warcraft/              # 魔獸世界戰役
+│   │   ├── classes.md         #   9職業技能+天賦（經典舊世1.12忠實）
+│   │   ├── quests.md          #   主線30章+8區域支線+NPC招募
+│   │   ├── tier-sets.md       #   T1-T3團本套裝（36套）
+│   │   ├── enemies.md         #   怪物數據表
+│   │   ├── items.md           #   裝備物品表
+│   │   └── dungeons/          #   14副本完整設計
 │   ├── cthulhu/               # 克蘇魯神話戰役
 │   ├── bloodborne/            # 血源詛咒戰役
 │   └── monsterhunter/         # 怪物獵人戰役
