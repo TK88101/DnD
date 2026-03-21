@@ -398,9 +398,370 @@ function skillCheck(statMod, proficient, level, dc) {
   };
 }
 
+// === 技能數據表 ===
+const SKILLS = {
+  warcraft: {
+    '戰士': [
+      { level: 1, name: '猛擊', type: 'attack', target: 'single', damage: '1d8+2', damageType: '物理', mpCost: 0, desc: '單體攻擊，傷害+2' },
+      { level: 2, name: '戰吼', type: 'buff', target: 'party', duration: 3, mpCost: 0, desc: '全體攻擊+1，3回合' },
+      { level: 4, name: '旋風斬', type: 'attack', target: 'all_enemies', damage: '1d8', damageType: '物理', mpCost: 0, desc: '攻擊所有鄰近敵人' },
+      { level: 6, name: '盾牌格擋', type: 'defend', target: 'self', duration: 1, mpCost: 0, desc: '下次傷害減半' },
+      { level: 8, name: '衝鋒', type: 'attack', target: 'single', damage: '1d8+2', damageType: '物理', mpCost: 0, desc: '攻擊+2並眩暈1回合' },
+      { level: 10, name: '破甲攻擊', type: 'attack', target: 'single', damage: '1d8', damageType: '物理', mpCost: 0, desc: '降低目標AC 2點，3回合' },
+      { level: 12, name: '嘲諷', type: 'taunt', target: 'single', duration: 2, mpCost: 0, desc: '強制敵人攻擊自己' },
+      { level: 14, name: '拳擊', type: 'interrupt', target: 'single', mpCost: 0, desc: '打斷施法' },
+      { level: 16, name: '死亡之願', type: 'buff', target: 'self', duration: 3, mpCost: 0, desc: '攻擊+4，受傷+2' },
+      { level: 18, name: '盾牆', type: 'defend', target: 'self', duration: 2, mpCost: 0, desc: '傷害減少50%' },
+      { level: 20, name: '大旋風', type: 'attack', target: 'all_enemies', damage: '2d8', damageType: '物理', mpCost: 0, desc: '2倍武器傷害全體' },
+    ],
+    '法師': [
+      { level: 1, name: '火球術', type: 'attack', target: 'single', damage: '2d6', damageType: '火焰', mpCost: 5, desc: '遠程火焰傷害' },
+      { level: 2, name: '冰霜新星', type: 'attack', target: 'all_enemies', damage: '1d8', damageType: '冰霜', mpCost: 5, desc: 'AOE+減速2回合' },
+      { level: 4, name: '奧術飛彈', type: 'attack', target: 'single', damage: '3d4+3', damageType: '奧術', mpCost: 5, desc: '自動命中3發' },
+      { level: 6, name: '變羊術', type: 'cc', target: 'single', duration: 3, mpCost: 8, desc: '控制3回合' },
+      { level: 8, name: '閃現', type: 'utility', target: 'self', mpCost: 3, desc: '瞬移脫離近戰' },
+      { level: 10, name: '暴風雪', type: 'attack', target: 'all_enemies', damage: '3d6', damageType: '冰霜', mpCost: 10, desc: 'AOE冰霜+減速' },
+      { level: 12, name: '法術反制', type: 'interrupt', target: 'single', mpCost: 5, desc: '打斷+沉默1回合' },
+      { level: 14, name: '烈焰風暴', type: 'attack', target: 'all_enemies', damage: '4d6', damageType: '火焰', mpCost: 12, desc: 'AOE火焰' },
+      { level: 16, name: '寒冰屏障', type: 'defend', target: 'self', duration: 2, mpCost: 10, desc: '免疫傷害但無法行動' },
+      { level: 18, name: '奧術強化', type: 'buff', target: 'self', duration: 1, mpCost: 8, desc: '下個法術傷害翻倍' },
+      { level: 20, name: '炎爆術', type: 'attack', target: 'single', damage: '8d6', damageType: '火焰', mpCost: 20, desc: '必定暴擊' },
+    ],
+    '牧師': [
+      { level: 1, name: '聖光術', type: 'heal', target: 'single', damage: '2d6', damageType: '神聖', mpCost: 5, desc: '治療2d6+WIS' },
+      { level: 2, name: '神聖懲擊', type: 'attack', target: 'single', damage: '2d6', damageType: '神聖', mpCost: 5, desc: '遠程神聖傷害' },
+      { level: 4, name: '恢復術', type: 'hot', target: 'single', damage: '1d6', duration: 3, damageType: '神聖', mpCost: 5, desc: '3回合HOT' },
+      { level: 6, name: '驅散魔法', type: 'dispel', target: 'single', mpCost: 5, desc: '移除負面狀態' },
+      { level: 8, name: '治療禱言', type: 'heal', target: 'party', damage: '1d8', damageType: '神聖', mpCost: 10, desc: '全體治療' },
+      { level: 10, name: '暗影之言：痛', type: 'dot', target: 'single', damage: '1d4', duration: 3, damageType: '暗影', mpCost: 8, desc: '1d8傷害+DOT' },
+      { level: 12, name: '真言術：盾', type: 'shield', target: 'single', mpCost: 8, desc: '吸收15點傷害' },
+      { level: 14, name: '神聖之火', type: 'attack', target: 'single', damage: '3d8', damageType: '神聖', mpCost: 10, desc: '3d8+灼燒' },
+      { level: 16, name: '大治療術', type: 'heal', target: 'single', damage: '4d8', damageType: '神聖', mpCost: 15, desc: '強力單體治療' },
+      { level: 18, name: '守護靈魂', type: 'resurrect', target: 'single', mpCost: 20, desc: '死亡自動復活50%HP' },
+      { level: 20, name: '神聖頌歌', type: 'heal', target: 'party', damage: '4d6', damageType: '神聖', mpCost: 25, desc: '全體大治療+驅散' },
+    ],
+    '盜賊': [
+      { level: 1, name: '背刺', type: 'attack', target: 'single', damage: '1d6+2d6', damageType: '物理', mpCost: 0, desc: '潛行攻擊+2d6' },
+      { level: 2, name: '邪惡攻擊', type: 'attack', target: 'single', damage: '1d6+1d6', damageType: '物理', mpCost: 0, desc: '傷害+1d6' },
+      { level: 4, name: '潛行', type: 'stealth', target: 'self', mpCost: 0, desc: '進入隱身' },
+      { level: 6, name: '毒刃', type: 'buff', target: 'self', duration: 3, mpCost: 0, desc: '附毒1d4/命中' },
+      { level: 8, name: '悶棍', type: 'cc', target: 'single', duration: 2, mpCost: 0, desc: '潛行擊暈2回合' },
+      { level: 10, name: '切割', type: 'dot', target: 'single', damage: '1d4', duration: 3, damageType: '物理', mpCost: 0, desc: '流血DOT' },
+      { level: 12, name: '致盲', type: 'cc', target: 'single', duration: 2, mpCost: 0, desc: '致盲2回合' },
+      { level: 14, name: '腎擊', type: 'cc', target: 'single', duration: 2, mpCost: 0, desc: '眩暈2回合' },
+      { level: 16, name: '消失', type: 'stealth', target: 'self', mpCost: 0, desc: '戰鬥中潛行' },
+      { level: 18, name: '影舞步', type: 'buff', target: 'self', duration: 3, mpCost: 0, desc: '所有攻擊視為潛行' },
+      { level: 20, name: '暗影之舞', type: 'attack', target: 'single', damage: '6d8', damageType: '物理', mpCost: 0, desc: '無視護甲' },
+    ],
+    '獵人': [
+      { level: 1, name: '穩固射擊', type: 'attack', target: 'single', damage: '1d8+2', damageType: '物理', mpCost: 0, desc: '遠程攻擊+2' },
+      { level: 2, name: '毒蛇釘刺', type: 'dot', target: 'single', damage: '1d4', duration: 3, damageType: '毒素', mpCost: 0, desc: '遠程+DOT' },
+      { level: 4, name: '召喚野獸', type: 'summon', summonId: 'hunter_pet', mpCost: 0, persistent: true, desc: '召喚戰鬥寵物' },
+      { level: 6, name: '多重射擊', type: 'attack', target: 'multi_3', damage: '1d8', damageType: '物理', mpCost: 0, desc: '攻擊3目標' },
+      { level: 8, name: '假死', type: 'utility', target: 'self', mpCost: 0, desc: '脫離戰鬥' },
+      { level: 10, name: '瞄準射擊', type: 'attack', target: 'single', damage: '3d8', damageType: '物理', mpCost: 0, desc: '蓄力強攻' },
+      { level: 12, name: '冰凍陷阱', type: 'cc', target: 'single', duration: 2, mpCost: 0, desc: '凍結2回合' },
+      { level: 14, name: '亂射', type: 'attack', target: 'all_enemies', damage: '1d8', damageType: '物理', mpCost: 0, desc: 'AOE射擊' },
+      { level: 16, name: '反擊', type: 'reaction', target: 'single', damage: '1d8', damageType: '物理', mpCost: 0, desc: '被近戰時反射擊' },
+      { level: 18, name: '威懾', type: 'cc', target: 'all_enemies', duration: 2, mpCost: 0, desc: '恐懼全體2回合' },
+      { level: 20, name: '奇美拉射擊', type: 'attack', target: 'single', damage: '5d10', damageType: '物理', mpCost: 0, desc: '大傷害+自我治療25%' },
+    ],
+    '聖騎士': [
+      { level: 1, name: '聖光審判', type: 'attack', target: 'single', damage: '1d8+1d6', damageType: '神聖', mpCost: 5, desc: '近戰+神聖' },
+      { level: 2, name: '聖療術', type: 'heal', target: 'single', damage: '2d6', damageType: '神聖', mpCost: 5, desc: '治療2d6+WIS' },
+      { level: 4, name: '奉獻', type: 'dot', target: 'all_enemies', damage: '1d6', duration: 3, damageType: '神聖', mpCost: 5, desc: '周圍AOE DOT' },
+      { level: 6, name: '聖盾術', type: 'defend', target: 'self', duration: 2, mpCost: 8, desc: '免疫傷害但無法攻擊' },
+      { level: 8, name: '正義之錘', type: 'attack', target: 'single', damage: '2d6', damageType: '神聖', mpCost: 5, desc: '遠程+眩暈1回合' },
+      { level: 10, name: '聖光閃現', type: 'heal', target: 'single', damage: '1d8', damageType: '神聖', mpCost: 3, desc: '快速治療' },
+      { level: 12, name: '自由祝福', type: 'dispel', target: 'single', mpCost: 5, desc: '移除控制效果' },
+      { level: 14, name: '公正之怒', type: 'buff', target: 'self', duration: 3, mpCost: 5, desc: '攻擊+3' },
+      { level: 16, name: '聖療術（大）', type: 'heal', target: 'single', damage: '4d8', damageType: '神聖', mpCost: 15, desc: '強力治療' },
+      { level: 18, name: '聖光護甲', type: 'shield', target: 'single', duration: 3, mpCost: 10, desc: '傷害減少30%' },
+      { level: 20, name: '復仇之怒', type: 'attack', target: 'all_enemies', damage: '4d8', damageType: '神聖', mpCost: 20, desc: 'AOE+眩暈1回合' },
+    ],
+    '薩滿': [
+      { level: 1, name: '閃電箭', type: 'attack', target: 'single', damage: '2d6', damageType: '自然', mpCost: 5, desc: '遠程自然傷害' },
+      { level: 2, name: '大地圖騰', type: 'buff', target: 'party', duration: 3, mpCost: 5, desc: '全隊AC+1' },
+      { level: 4, name: '火焰震擊', type: 'dot', target: 'single', damage: '1d6', duration: 3, damageType: '火焰', mpCost: 5, desc: '火焰+DOT' },
+      { level: 6, name: '治療波', type: 'heal', target: 'single', damage: '2d8', damageType: '自然', mpCost: 5, desc: '治療2d8+WIS' },
+      { level: 8, name: '風剪', type: 'interrupt', target: 'single', mpCost: 3, desc: '打斷施法' },
+      { level: 10, name: '閃電鏈', type: 'attack', target: 'multi_3', damage: '2d6', damageType: '自然', mpCost: 8, desc: '鏈式攻擊3目標' },
+      { level: 12, name: '治療圖騰', type: 'hot', target: 'party', damage: '1d6', duration: 3, damageType: '自然', mpCost: 8, desc: '全隊HOT' },
+      { level: 14, name: '熔岩爆裂', type: 'attack', target: 'single', damage: '4d6', damageType: '火焰', mpCost: 10, desc: '強力單體火焰' },
+      { level: 16, name: '先祖之魂', type: 'resurrect', target: 'single', mpCost: 15, desc: '復活隊友30%HP' },
+      { level: 18, name: '英勇氣概', type: 'buff', target: 'party', duration: 3, mpCost: 10, desc: '全隊攻擊速度翻倍' },
+      { level: 20, name: '元素掌握', type: 'attack', target: 'all_enemies', damage: '6d8', damageType: '自然', mpCost: 25, desc: '元素AOE大傷害' },
+    ],
+    '術士': [
+      { level: 1, name: '暗影箭', type: 'attack', target: 'single', damage: '2d6', damageType: '暗影', mpCost: 5, desc: '遠程暗影傷害' },
+      { level: 2, name: '腐蝕術', type: 'dot', target: 'single', damage: '1d6', duration: 5, damageType: '暗影', mpCost: 5, desc: '5回合DOT' },
+      { level: 4, name: '召喚小鬼', type: 'summon', summonId: 'imp', mpCost: 10, persistent: true, desc: '召喚小鬼助戰' },
+      { level: 6, name: '生命虹吸', type: 'drain', target: 'single', damage: '1d8', damageType: '暗影', mpCost: 8, desc: '吸血攻擊' },
+      { level: 8, name: '恐懼術', type: 'cc', target: 'single', duration: 3, mpCost: 10, immuneCheck: 'fear', desc: '恐懼3回合' },
+      { level: 10, name: '召喚虛空行者', type: 'summon', summonId: 'voidwalker', mpCost: 15, persistent: true, desc: '召喚坦克惡魔' },
+      { level: 12, name: '痛苦無常', type: 'attack', target: 'single', damage: '0', damageType: '暗影', mpCost: 8, desc: '引爆所有DOT剩餘傷害' },
+      { level: 14, name: '靈魂之火', type: 'attack', target: 'single', damage: '4d6', damageType: '暗影', mpCost: 10, desc: '蓄力大傷害' },
+      { level: 16, name: '地獄火', type: 'attack', target: 'all_enemies', damage: '2d8', damageType: '火焰', mpCost: 15, desc: 'AOE含自傷' },
+      { level: 18, name: '靈魂石', type: 'resurrect', target: 'single', mpCost: 20, desc: '死亡自動復活30%HP' },
+      { level: 20, name: '召喚末日守衛', type: 'summon', summonId: 'doomguard', mpCost: 25, persistent: false, desc: '召喚強力惡魔5回合' },
+    ],
+    '德魯伊': [
+      { level: 1, name: '月火術', type: 'dot', target: 'single', damage: '1d4', duration: 3, damageType: '奧術', mpCost: 5, desc: '1d8+DOT' },
+      { level: 2, name: '治療之觸', type: 'heal', target: 'single', damage: '2d6', damageType: '自然', mpCost: 5, desc: '治療2d6+WIS' },
+      { level: 4, name: '熊形態', type: 'shapeshift', target: 'self', mpCost: 5, desc: 'HP+50% AC+3 無法施法' },
+      { level: 6, name: '豹形態', type: 'shapeshift', target: 'self', mpCost: 5, desc: '攻擊+2 可潛行背刺' },
+      { level: 8, name: '糾纏根鬚', type: 'cc', target: 'single', duration: 3, mpCost: 5, desc: '束縛3回合' },
+      { level: 10, name: '回春術', type: 'hot', target: 'single', damage: '1d6', duration: 5, damageType: '自然', mpCost: 5, desc: '5回合HOT' },
+      { level: 12, name: '梟獸形態', type: 'shapeshift', target: 'self', mpCost: 8, desc: '法傷+30% AC+2' },
+      { level: 14, name: '野蠻咆哮', type: 'taunt', target: 'all_enemies', duration: 2, mpCost: 5, desc: '熊形態嘲諷全體' },
+      { level: 16, name: '自然之力', type: 'summon', summonId: 'treant', mpCost: 10, persistent: false, desc: '召喚3棵樹人3回合' },
+      { level: 18, name: '重生', type: 'resurrect', target: 'single', mpCost: 20, desc: '復活隊友30%HP' },
+      { level: 20, name: '生命之樹', type: 'shapeshift', target: 'self', duration: 5, mpCost: 15, desc: '治療效果翻倍5回合' },
+    ],
+  }
+};
+
+// === 天賦數據表 ===
+const TALENTS = {
+  warcraft: {
+    '戰士': {
+      '武器': [
+        { tier: 1, name: '強化猛擊', effect: { modify: 'skill.猛擊.damage', value: '1d8+3' } },
+        { tier: 2, name: '致死打擊', effect: { type: 'active', name: '致死打擊', damage: '2d10', target: 'single' } },
+        { tier: 3, name: '利刃風暴', effect: { modify: 'skill.旋風斬.damage_mult', value: 1.5 } },
+        { tier: 4, name: '斬殺', effect: { type: 'active', name: '斬殺', damage: '3d10', condition: 'target_hp<20%' } },
+        { tier: 5, name: '劍刃風暴', effect: { type: 'active', name: '劍刃風暴', damage: '1d10', duration: 3, target: 'all_enemies' } },
+      ],
+      '狂怒': [
+        { tier: 1, name: '狂暴之怒', effect: { trigger: 'on_crit', bonus_damage: 4 } },
+        { tier: 2, name: '狂暴打擊', effect: { type: 'active', name: '狂暴打擊', attacks: 2 } },
+        { tier: 3, name: '旋風', effect: { trigger: 'crit_on_whirlwind', bonus: '1d8' } },
+        { tier: 4, name: '嗜血', effect: { trigger: 'on_hit', heal: 2 } },
+        { tier: 5, name: '泰坦之握', effect: { type: 'passive', dual_wield_2h: true, atk_penalty: -2 } },
+      ],
+      '防護': [
+        { tier: 1, name: '強化格擋', effect: { modify: 'skill.盾牌格擋', full_block: true } },
+        { tier: 2, name: '復仇', effect: { trigger: 'on_hit_taken', next_attack_advantage: true } },
+        { tier: 3, name: '盾牆強化', effect: { modify: 'skill.盾牆.duration', value: 3 } },
+        { tier: 4, name: '震盪波', effect: { type: 'active', name: '震盪波', damage: '2d6', target: 'cone', stun_dc: 13 } },
+        { tier: 5, name: '不朽堡壘', effect: { trigger: 'on_death', revive_pct: 20, once_per_combat: true } },
+      ],
+    },
+    '法師': {
+      '奧術': [
+        { tier: 1, name: '奧術專注', effect: { modify: 'skill.奧術飛彈.missiles', value: 5 } },
+        { tier: 2, name: '奧術衝擊', effect: { type: 'active', name: '奧術衝擊', damage: '3d8', knockback: true } },
+        { tier: 3, name: '魔力回流', effect: { trigger: 'on_kill', restore_skill: 1 } },
+        { tier: 4, name: '奧術彈幕', effect: { modify: 'skill.奧術飛彈.damage', value: '5d6+10' } },
+        { tier: 5, name: '奧術之力', effect: { type: 'passive', spell_damage_mult: 1.3 } },
+      ],
+      '火焰': [
+        { tier: 1, name: '強化火球', effect: { modify: 'skill.火球術.dot', damage: '1d4', duration: 2 } },
+        { tier: 2, name: '活體炸彈', effect: { type: 'active', name: '活體炸彈', damage: '3d6', delay: 3, target: 'aoe' } },
+        { tier: 3, name: '燃燒', effect: { modify: 'fire_dot_damage', value: '1d6' } },
+        { tier: 4, name: '龍息術', effect: { type: 'active', name: '龍息術', damage: '4d6', target: 'cone', stun: 1 } },
+        { tier: 5, name: '隕石術', effect: { type: 'active', name: '隕石術', damage: '6d8', target: 'all_enemies' } },
+      ],
+      '冰霜': [
+        { tier: 1, name: '強化冰霜新星', effect: { modify: 'skill.冰霜新星.damage', value: '2d8' } },
+        { tier: 2, name: '寒冰箭', effect: { type: 'active', name: '寒冰箭', damage: '2d8', freeze_chance: 50 } },
+        { tier: 3, name: '冰錐術', effect: { type: 'active', name: '冰錐術', damage: '3d6', target: 'cone' } },
+        { tier: 4, name: '寒冰屏障強化', effect: { modify: 'skill.寒冰屏障.on_end_damage', value: '2d8' } },
+        { tier: 5, name: '極寒風暴', effect: { modify: 'skill.暴風雪.damage_mult', value: 2, freeze_chance: 50 } },
+      ],
+    },
+    '術士': {
+      '痛苦': [
+        { tier: 1, name: '強化腐蝕', effect: { modify: 'skill.腐蝕術.damage', value: '1d8' } },
+        { tier: 2, name: '痛苦詛咒', effect: { type: 'active', name: '痛苦詛咒', damage: '1d8', duration: 5, stacks: true } },
+        { tier: 3, name: '夜幕降臨', effect: { trigger: 'on_shadow_bolt', instant_chance: 25 } },
+        { tier: 4, name: '不穩定的痛苦', effect: { type: 'active', name: '不穩定的痛苦', damage: '1d10', duration: 5, on_dispel: '4d8' } },
+        { tier: 5, name: '枯萎凋零', effect: { type: 'passive', dot_damage_mult: 1.5 } },
+      ],
+      '惡魔': [
+        { tier: 1, name: '強化小鬼', effect: { modify: 'summon.imp.damage', value: '2d6' } },
+        { tier: 2, name: '惡魔之力', effect: { modify: 'summon.all.hp_mult', value: 1.5, atk_bonus: 2 } },
+        { tier: 3, name: '惡魔犧牲', effect: { type: 'active', name: '惡魔犧牲', heal_pct: 50, kills_summon: true } },
+        { tier: 4, name: '召喚地獄犬', effect: { type: 'unlock_summon', summonId: 'felhound' } },
+        { tier: 5, name: '惡魔變身', effect: { type: 'active', name: '惡魔變身', duration: 5, all_stats_bonus: 3 } },
+      ],
+      '毀滅': [
+        { tier: 1, name: '強化暗影箭', effect: { modify: 'skill.暗影箭.damage', value: '3d6' } },
+        { tier: 2, name: '混亂箭', effect: { type: 'active', name: '混亂箭', damage: '3d8', damageType: 'shadow_fire' } },
+        { tier: 3, name: '暗影灼燒', effect: { type: 'active', name: '暗影灼燒', damage: '2d10', no_cast_time: true } },
+        { tier: 4, name: '暗影易傷', effect: { type: 'debuff', name: '暗影易傷', shadow_damage_mult: 1.2, duration: 5 } },
+        { tier: 5, name: '暗影烈焰', effect: { type: 'active', name: '暗影烈焰', damage: '5d8', target: 'all_enemies' } },
+      ],
+    },
+    '牧師': {
+      '神聖': [
+        { tier: 1, name: '強化聖光', effect: { modify: 'skill.聖光術.damage', value: '3d6' } },
+        { tier: 2, name: '聖光湧泉', effect: { trigger: 'on_heal', extra_heal_chance: 25, extra_heal_mult: 0.5 } },
+        { tier: 3, name: '神聖專注', effect: { modify: 'skill.治療禱言.damage', value: '2d8' } },
+        { tier: 4, name: '光明之泉', effect: { type: 'active', name: '光明之泉', heal: '2d6', duration: 3, target: 'zone' } },
+        { tier: 5, name: '神聖守護', effect: { trigger: 'on_heal', target_dmg_reduction: 0.15, duration: 2 } },
+      ],
+      '戒律': [
+        { tier: 1, name: '強化護盾', effect: { modify: 'skill.真言術：盾.absorb', value: 25 } },
+        { tier: 2, name: '痛苦壓制', effect: { trigger: 'shield_active', target_atk_bonus: 1 } },
+        { tier: 3, name: '懺悔', effect: { type: 'active', name: '懺悔', cc_duration: 3, target: 'humanoid' } },
+        { tier: 4, name: '靈魂之火', effect: { type: 'passive', damage_to_heal_pct: 50 } },
+        { tier: 5, name: '神恩術', effect: { type: 'active', name: '神恩術', next_heal_double: true } },
+      ],
+      '暗影': [
+        { tier: 1, name: '強化暗言痛', effect: { modify: 'skill.暗影之言：痛.damage', value: '1d6' } },
+        { tier: 2, name: '吸血鬼之觸', effect: { type: 'active', name: '吸血鬼之觸', damage: '3d6', heal_equal: true } },
+        { tier: 3, name: '暗影形態', effect: { type: 'active', name: '暗影形態', shadow_damage_mult: 1.3, no_holy: true } },
+        { tier: 4, name: '精神鞭笞', effect: { type: 'active', name: '精神鞭笞', damage: '2d6', duration: 3, channel: true } },
+        { tier: 5, name: '暗影之擁', effect: { type: 'passive', shadow_dot_damage_mult: 2 } },
+      ],
+    },
+    '盜賊': {
+      '刺殺': [
+        { tier: 1, name: '強化毒刃', effect: { modify: 'poison_damage', value: '1d6' } },
+        { tier: 2, name: '冷血', effect: { type: 'active', name: '冷血', next_crit: true, once_per_combat: true } },
+        { tier: 3, name: '致命毒藥', effect: { modify: 'skill.毒刃.duration', value: 'permanent' } },
+        { tier: 4, name: '毒素擴散', effect: { type: 'passive', poison_spread: true } },
+        { tier: 5, name: '毒心', effect: { type: 'passive', poison_damage_mult: 2 } },
+      ],
+      '戰鬥': [
+        { tier: 1, name: '雙武器精通', effect: { type: 'passive', dual_wield_penalty: 0 } },
+        { tier: 2, name: '劍刃亂舞', effect: { type: 'active', name: '劍刃亂舞', attacks: 3 } },
+        { tier: 3, name: '衝動', effect: { trigger: 'on_crit', extra_attack: true } },
+        { tier: 4, name: '殺戮盛宴', effect: { trigger: 'on_kill', atk_bonus: 2, dmg_bonus: 2, permanent: true } },
+        { tier: 5, name: '疾風連斬', effect: { modify: 'skill.劍刃亂舞.attacks', value: 5 } },
+      ],
+      '敏銳': [
+        { tier: 1, name: '高級潛行', effect: { type: 'passive', stealth_undetectable: true } },
+        { tier: 2, name: '伺機待發', effect: { modify: 'stealth_bonus_damage', value: '1d6' } },
+        { tier: 3, name: '準備就緒', effect: { modify: 'skill.消失.uses', value: 2 } },
+        { tier: 4, name: '暗影步', effect: { type: 'active', name: '暗影步', teleport: true, stealth_attack: true } },
+        { tier: 5, name: '影分身', effect: { trigger: 'on_vanish', decoy_duration: 2 } },
+      ],
+    },
+    '獵人': {
+      '射擊': [
+        { tier: 1, name: '精準射擊', effect: { type: 'passive', ranged_atk_bonus: 2 } },
+        { tier: 2, name: '致命瞄準', effect: { modify: 'skill.瞄準射擊.damage', value: '4d8' } },
+        { tier: 3, name: '狂射', effect: { type: 'active', name: '狂射', attacks: 2, duration: 3 } },
+        { tier: 4, name: '沉默射擊', effect: { type: 'active', name: '沉默射擊', silence: 2 } },
+        { tier: 5, name: '真正瞄準', effect: { modify: 'skill.瞄準射擊.no_charge', value: true } },
+      ],
+      '野獸': [
+        { tier: 1, name: '強化寵物', effect: { modify: 'pet.hp_mult', value: 1.5 } },
+        { tier: 2, name: '狂野怒火', effect: { trigger: 'pet_attack', extra_attack_chance: 25 } },
+        { tier: 3, name: '恐嚇', effect: { type: 'active', name: '恐嚇', pet_taunt: true } },
+        { tier: 4, name: '野獸之心', effect: { type: 'active', name: '野獸之心', pet_berserk: 3, atk_mult: 2 } },
+        { tier: 5, name: '雙獸共舞', effect: { type: 'passive', dual_pet: true } },
+      ],
+      '生存': [
+        { tier: 1, name: '強化陷阱', effect: { modify: 'skill.冰凍陷阱.duration', value: 3 } },
+        { tier: 2, name: '反擊強化', effect: { modify: 'skill.反擊.damage', value: '1d8+1d8' } },
+        { tier: 3, name: '爆炸陷阱', effect: { type: 'active', name: '爆炸陷阱', damage: '3d6', target: 'aoe' } },
+        { tier: 4, name: '翼龍釘刺', effect: { type: 'active', name: '翼龍釘刺', sleep: 3 } },
+        { tier: 5, name: '黑箭', effect: { type: 'active', name: '黑箭', damage: '4d8', on_kill_summon: true } },
+      ],
+    },
+    '聖騎士': {
+      '神聖': [
+        { tier: 1, name: '強化聖療', effect: { modify: 'skill.聖療術.damage', value: '3d6' } },
+        { tier: 2, name: '聖佑術', effect: { type: 'active', name: '聖佑術', auto_heal: '1d4', duration: 5 } },
+        { tier: 3, name: '專注光環', effect: { type: 'passive', party_heal_bonus: 0.15 } },
+        { tier: 4, name: '聖光信標', effect: { type: 'active', name: '聖光信標', mirror_heal: 0.5 } },
+        { tier: 5, name: '神聖震擊', effect: { type: 'active', name: '神聖震擊', heal_or_damage: '3d8' } },
+      ],
+      '防護': [
+        { tier: 1, name: '強化奉獻', effect: { modify: 'skill.奉獻.damage', value: '2d6' } },
+        { tier: 2, name: '十字軍打擊', effect: { trigger: 'on_hit_taken', heal: 3 } },
+        { tier: 3, name: '神聖之盾', effect: { modify: 'skill.聖盾術.can_attack', value: true, damage_mult: 0.5 } },
+        { tier: 4, name: '復仇者之盾', effect: { type: 'active', name: '復仇者之盾', damage: '3d6', bounces: 3 } },
+        { tier: 5, name: '堅韌光環', effect: { type: 'passive', party_ac_bonus: 2 } },
+      ],
+      '懲戒': [
+        { tier: 1, name: '強化審判', effect: { modify: 'skill.聖光審判.damage', value: '1d8+2d6' } },
+        { tier: 2, name: '公正之劍', effect: { trigger: 'on_attack', extra_attack_chance: 25 } },
+        { tier: 3, name: '十字軍之力', effect: { type: 'passive', crit_bonus: 10 } },
+        { tier: 4, name: '聖光風暴', effect: { type: 'active', name: '聖光風暴', damage: '3d10', target: 'all_enemies' } },
+        { tier: 5, name: '灰燼使者', effect: { type: 'passive', two_hand_damage_mult: 1.5 } },
+      ],
+    },
+    '薩滿': {
+      '元素': [
+        { tier: 1, name: '強化閃電', effect: { modify: 'skill.閃電箭.damage', value: '3d6' } },
+        { tier: 2, name: '元素集中', effect: { trigger: 'on_lightning', overload_chance: 30 } },
+        { tier: 3, name: '火焰圖騰', effect: { type: 'active', name: '火焰圖騰', damage: '1d8', duration: 3, auto: true } },
+        { tier: 4, name: '雷霆風暴', effect: { type: 'active', name: '雷霆風暴', damage: '4d8', target: 'all_enemies' } },
+        { tier: 5, name: '元素之怒', effect: { type: 'passive', elemental_damage_mult: 1.3 } },
+      ],
+      '增強': [
+        { tier: 1, name: '強化武器', effect: { type: 'passive', weapon_damage_bonus: '1d6' } },
+        { tier: 2, name: '風怒武器', effect: { trigger: 'on_melee', extra_attacks: 2, chance: 20 } },
+        { tier: 3, name: '熔岩猛擊', effect: { type: 'active', name: '熔岩猛擊', damage: '2d8', damageType: '火焰' } },
+        { tier: 4, name: '精通圖騰', effect: { type: 'passive', totem_effect_mult: 1.5 } },
+        { tier: 5, name: '暴風打擊', effect: { type: 'active', name: '暴風打擊', damage: '4d10', damageType: '自然' } },
+      ],
+      '恢復': [
+        { tier: 1, name: '強化治療波', effect: { modify: 'skill.治療波.damage', value: '3d8' } },
+        { tier: 2, name: '潮汐圖騰', effect: { type: 'active', name: '潮汐圖騰', party_heal: '1d8', duration: 3 } },
+        { tier: 3, name: '大地之盾', effect: { type: 'active', name: '大地之盾', charges: 6, heal_per_charge: '1d6' } },
+        { tier: 4, name: '自然迅捷', effect: { type: 'active', name: '自然迅捷', next_heal_instant: true } },
+        { tier: 5, name: '潮汐之力', effect: { type: 'passive', heal_crit_bonus: 50 } },
+      ],
+    },
+    '德魯伊': {
+      '平衡': [
+        { tier: 1, name: '強化月火', effect: { modify: 'skill.月火術.damage', value: '1d6' } },
+        { tier: 2, name: '星火術', effect: { type: 'active', name: '星火術', damage: '3d8', damageType: '奧術' } },
+        { tier: 3, name: '自然之握', effect: { modify: 'skill.糾纏根鬚.no_break', value: true } },
+        { tier: 4, name: '星湧術', effect: { type: 'active', name: '星湧術', damage: '4d8', slow: true } },
+        { tier: 5, name: '日蝕月蝕', effect: { type: 'passive', alternating_damage_bonus: 0.5 } },
+      ],
+      '野性': [
+        { tier: 1, name: '強化熊形態', effect: { modify: 'bear.hp_mult', value: 1.75 } },
+        { tier: 2, name: '撕碎', effect: { type: 'active', name: '撕碎', damage: '2d8', cat_only: true } },
+        { tier: 3, name: '野性衝鋒', effect: { type: 'active', name: '野性衝鋒', stun: 1, any_form: true } },
+        { tier: 4, name: '獸群領袖', effect: { type: 'passive', party_crit_bonus: 5 } },
+        { tier: 5, name: '狂暴', effect: { type: 'active', name: '狂暴', cat_attack_mult: 2, duration: 3 } },
+      ],
+      '恢復': [
+        { tier: 1, name: '強化回春', effect: { modify: 'skill.回春術.damage', value: '2d6' } },
+        { tier: 2, name: '自然賜福', effect: { trigger: 'on_heal', bonus_heal_chance: 30, bonus: '1d6' } },
+        { tier: 3, name: '野性成長', effect: { type: 'active', name: '野性成長', party_hot: '1d4', duration: 5 } },
+        { tier: 4, name: '迅癒', effect: { type: 'active', name: '迅癒', instant_heal: '3d8' } },
+        { tier: 5, name: '生命之花', effect: { type: 'passive', hot_healing_mult: 1.5 } },
+      ],
+    },
+  }
+};
+
+// === 召喚物數據表 ===
+const SUMMONS = {
+  imp:         { name: '小鬼',     hp: '2d6+4',   ac: 11, attack: { name: '火焰箭',   bonus: 3, damage: '1d6', damageType: '火焰', type: 'ranged' }, ai: 'dps_ranged' },
+  voidwalker:  { name: '虛空行者', hp: '4d8+8',   ac: 14, attack: { name: '虛空撕裂', bonus: 4, damage: '1d8', damageType: '暗影', type: 'melee' },  ai: 'tank', abilities: ['taunt'] },
+  felhound:    { name: '地獄犬',   hp: '3d8+6',   ac: 13, attack: { name: '魔能撕咬', bonus: 4, damage: '1d8', damageType: '奧術', type: 'melee' },  ai: 'anti_caster', abilities: ['dispel'] },
+  doomguard:   { name: '末日守衛', hp: '6d10+12', ac: 16, attack: { name: '末日之劍', bonus: 7, damage: '3d8', damageType: '火焰', type: 'melee' },  ai: 'dps_melee', duration: 5 },
+  hunter_pet:  { name: '戰鬥寵物', hp: '3d8+6',   ac: 13, attack: { name: '撕咬',     bonus: 4, damage: '1d6+2', damageType: '物理', type: 'melee' }, ai: 'dps_melee' },
+  treant:      { name: '樹人',     hp: '2d8+4',   ac: 12, attack: { name: '樹枝抽打', bonus: 3, damage: '1d6', damageType: '物理', type: 'melee' },   ai: 'dps_melee', duration: 3 },
+};
+
+// === MP 計算 ===
+function calculateMP(className, level, intMod) {
+  const BASE_MP = { '法師': 20, '術士': 15, '牧師': 20, '聖騎士': 10, '薩滿': 15, '德魯伊': 15 };
+  const base = BASE_MP[className] || 0;
+  if (base === 0) return 0;
+  return base + (level - 1) * 5 + intMod * 2;
+}
+
+// === 等級技能查詢 ===
+function getSkillsForLevel(campaign, className, level) {
+  const classSkills = (SKILLS[campaign] || {})[className] || [];
+  return classSkills.filter(s => s.level <= level);
+}
+
 module.exports = {
   roll, d20, modifier, validatePointBuy, proficiencyBonus,
   attackRoll, skillCheck,
   CharacterCreator,
-  RACES, CLASSES, POINT_COST, TOTAL_POINTS
+  RACES, CLASSES, POINT_COST, TOTAL_POINTS,
+  SKILLS, TALENTS, SUMMONS, calculateMP, getSkillsForLevel
 };
