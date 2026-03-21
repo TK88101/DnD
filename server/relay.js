@@ -497,6 +497,7 @@ const gameSessions = new Map();
 const charCreators = new Map(); // roomId → CharacterCreator
 const monsterDatabases = new Map(); // campaign → Map<name, template>
 const activeCombats = new Map();    // roomId → CombatSession
+const PLAYER_COLORS = ['g', 'b', 'm', 'y', 'r', 'c', 'w', 'orange']; // CSS class names
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // 確保 multiplayer 目錄存在
@@ -733,14 +734,15 @@ ${mechanicalResults}`;
 }
 
 // === 戰鬥引擎：狀態欄 + 選項列表 ===
-function buildCombatStatusBar(combat, currentPlayer) {
+function buildCombatStatusBar(combat, currentPlayer, playerColors) {
   const players = combat.participants.filter(p => p.side === 'player');
   const enemies = combat.participants.filter(p => p.side === 'enemy' && p.hp > 0);
 
   let bar = '\n╔═══════════════════════════════════╗\n';
   for (const p of players) {
     const mpStr = p.mp !== undefined ? ` MP:${p.mp}/${p.maxMp}` : '';
-    bar += `║ ${p.name} HP:${p.hp}/${p.maxHp}${mpStr}\n`;
+    const colorClass = (playerColors && playerColors.get(p.playerName || p.name)) || 'g';
+    bar += `║ <span class="${colorClass}">${p.name}</span> HP:${p.hp}/${p.maxHp}${mpStr}\n`;
   }
   for (const s of (combat.summons || [])) {
     bar += `║ 👹 ${s.name} HP:${s.hp}/${s.maxHp}\n`;
@@ -822,7 +824,7 @@ async function triggerCombat(roomId, room, enemies) {
 
   const firstPlayer = combat.getCurrentTurn();
   if (firstPlayer && combat.isActive) {
-    const { bar, options } = buildCombatStatusBar(combat, firstPlayer);
+    const { bar, options } = buildCombatStatusBar(combat, firstPlayer, room.playerColors);
     combat._lastOptions = options;
     output += bar;
   }
@@ -892,10 +894,15 @@ wss.on('connection', (ws) => {
           createOrder: [],      // 角色創建順序（掷骰排序）
           currentCreateIdx: 0,  // 當前創建角色的玩家索引
           afkPlayers: new Set(), // 暫離的玩家
-          lang: msg.lang || 'zh' // 語言設定
+          lang: msg.lang || 'zh', // 語言設定
+          playerColors: new Map(), // 玩家名 → 顏色CSS類
         });
         ws.roomId = roomId;
         ws.isHost = true;
+        // 主機分配第一個顏色
+        if (msg.playerName) {
+          rooms.get(roomId).playerColors.set(msg.playerName, PLAYER_COLORS[0]);
+        }
         ws.playerName = msg.playerName || null;
         ws.send(JSON.stringify({ type: 'room_created', roomId }));
         console.log(`[房間] ${roomId} 已創建`);
@@ -928,6 +935,15 @@ wss.on('connection', (ws) => {
         ws.playerName = playerName;
         ws.isHost = false;
         room.players.set(playerName, ws);
+
+        // 分配玩家顏色
+        if (!room.playerColors.has(playerName)) {
+          const colorIdx = room.playerColors.size % PLAYER_COLORS.length;
+          room.playerColors.set(playerName, PLAYER_COLORS[colorIdx]);
+        }
+        // 發送顏色映射給所有人
+        const colorMap = Object.fromEntries(room.playerColors);
+        broadcastAll(room, { type: 'player_colors', colors: colorMap });
 
         ws.send(JSON.stringify({ type: 'joined', roomId: msg.roomId }));
 
@@ -1554,7 +1570,7 @@ wss.on('connection', (ws) => {
                     }
                   } else {
                     const nextPlayer = activeCombat.getCurrentTurn();
-                    const { bar, options: opts } = buildCombatStatusBar(activeCombat, nextPlayer);
+                    const { bar, options: opts } = buildCombatStatusBar(activeCombat, nextPlayer, currentRoom.playerColors);
                     activeCombat._lastOptions = opts;
                     output += bar;
                   }

@@ -79,6 +79,7 @@
   .m { color: #bc8cff; }
   .d { color: #484f58; }
   .w { color: #f0f6fc; font-weight: bold; }
+  .orange { color: #f78166; }
 
   /* === 登入畫面 === */
   #login {
@@ -564,14 +565,17 @@ function hostMessageHandler(e) {
     case 'player_left':
       chatOut('<span class="y">- ' + msg.playerName + ' 離開了遊戲</span>');
       break;
+    case 'player_colors':
+      window._playerColors = msg.colors || {};
+      break;
     case 'player_action':
-      chatOut('<span class="b">[' + msg.from + ']</span> ' + msg.action);
+      chatOut('<span class="' + getPlayerColor(msg.from) + '">[' + msg.from + ']</span> ' + msg.action);
       break;
     case 'chat':
       if (msg.isAction) {
-        out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+        out('<span class="' + getPlayerColor(msg.from) + '">[' + msg.from + ']</span> ' + msg.text);
       } else {
-        chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
+        chatOut('<span class="' + getPlayerColor(msg.from) + '">[' + msg.from + ']</span> ' + msg.text);
       }
       break;
     case 'game_thinking':
@@ -646,6 +650,12 @@ document.addEventListener('keydown', e => {
     document.getElementById('title').textContent = bossMode ? 'kubectl — staging deploy' : 'node — debug session';
   }
 });
+
+// === 玩家顏色 ===
+window._playerColors = {};
+function getPlayerColor(name) {
+  return window._playerColors[name] || 'b';
+}
 
 // === 聊天框輸出 ===
 function chatOut(html) {
@@ -770,11 +780,14 @@ function playerMessageHandler(e) {
       outLines(msg.content);
       break;
 
+    case 'player_colors':
+      window._playerColors = msg.colors || {};
+      break;
     case 'chat':
       if (msg.isAction) {
-        out('<span class="b">[' + msg.from + ']</span> ' + msg.text);
+        out('<span class="' + getPlayerColor(msg.from) + '">[' + msg.from + ']</span> ' + msg.text);
       } else {
-        chatOut('<span class="m">[' + msg.from + ']</span> ' + msg.text);
+        chatOut('<span class="' + getPlayerColor(msg.from) + '">[' + msg.from + ']</span> ' + msg.text);
       }
       break;
 
