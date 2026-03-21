@@ -161,7 +161,7 @@ test('低立场低 HP 的 NPC 优先自保', () => {
     ],
     enemies: [{ name: '哥布林', hp: 10, maxHp: 10, side: 'enemy' }],
   });
-  assert.strictEqual(action.target, npc.name, `目标是自己`);
+  assert.strictEqual(action.target, npc.combatName, `目标是自己（带 [NPC] 前缀）`);
 });
 
 // === 副本分层系统 ===
@@ -398,6 +398,95 @@ test('NPC 队友参与战斗并自动行动', () => {
   const result = combat.executeNPCCompanionAI(npcParticipant);
   assert.ok(result, 'NPC 自动行动有结果');
   assert.ok(result.actor === '[NPC]战斗NPC', `行动者是 NPC (${result.actor})`);
+});
+
+// === Codex Review 回归测试 ===
+console.log('\n=== Codex Review Bug Fixes ===');
+
+test('[P1] 法师 NPC 的 MP 是数字而非 NaN', () => {
+  const npc = new NPCCompanion({
+    name: 'MP测试',
+    race: '亡靈',
+    raceData: RACES.warcraft['10'],
+    className: '法師',
+    classData: CLASSES.warcraft['法師'],
+    level: 10,
+    campaign: 'warcraft',
+  });
+  assert.ok(!isNaN(npc.mp), `MP 不是 NaN (${npc.mp})`);
+  assert.ok(npc.mp > 0, `法师 MP > 0 (${npc.mp})`);
+  assert.ok(!isNaN(npc.maxMp), `maxMp 不是 NaN (${npc.maxMp})`);
+});
+
+test('[P1] executeAction 后 HP/MP 正确同步到 companion', () => {
+  const npc = new NPCCompanion({
+    name: '同步测试',
+    race: '亡靈',
+    raceData: RACES.warcraft['10'],
+    className: '法師',
+    classData: CLASSES.warcraft['法師'],
+    level: 10,
+    campaign: 'warcraft',
+  });
+  const origMp = npc.mp;
+
+  const combatant = npc.toCombatant();
+  const enemies = [{
+    name: '测试怪', type: 'enemy', hp: 50, maxHp: 50, ac: 10,
+    attacks: [{ name: '爪击', bonus: 2, damage: '1d6', damageType: '物理' }],
+    exp: 10, loot: [],
+  }];
+
+  const combat = new CombatSession(
+    [combatant], JSON.parse(JSON.stringify(enemies)),
+    { hpMult: 1, atkMod: 0 }, { npcCompanions: [npc] }
+  );
+  combat.initCombat();
+
+  const npcP = combat.participants.find(p => p.name === '[NPC]同步测试');
+  combat.executeNPCCompanionAI(npcP);
+
+  // 如果施放了技能，MP 应该减少且 companion 和 participant 同步
+  assert.strictEqual(npc.mp, npcP.mp, `companion.mp (${npc.mp}) === participant.mp (${npcP.mp})`);
+});
+
+test('[P2] 自我治疗目标名使用 combatName', () => {
+  const npc = new NPCCompanion({
+    name: '治疗自己',
+    race: '人類',
+    raceData: RACES.warcraft['1'],
+    className: '牧師',
+    classData: CLASSES.warcraft['牧師'],
+    level: 5,
+    campaign: 'warcraft',
+  });
+  npc.temperament = 2;
+  npc.stance = 1;
+  npc.hp = 3;
+  npc.maxHp = 30;
+  npc.mp = 50;
+
+  const action = npc.chooseCombatAction({
+    allies: [{ name: '[NPC]治疗自己', hp: 3, maxHp: 30, side: 'player' }],
+    enemies: [{ name: '怪', hp: 10, maxHp: 10, side: 'enemy' }],
+  });
+  assert.strictEqual(action.target, '[NPC]治疗自己', `目标应带 [NPC] 前缀 (${action.target})`);
+});
+
+test('[P2] generateCompanionParty 尊重 count=1', () => {
+  const companions = generateCompanionParty(
+    { character: { class: '法師', faction: '部落', level: 10 } },
+    'warcraft', 1
+  );
+  assert.strictEqual(companions.length, 1, `count=1 时只生成 1 个 (实际 ${companions.length})`);
+});
+
+test('[P2] generateCompanionParty 尊重 count=0', () => {
+  const companions = generateCompanionParty(
+    { character: { class: '法師', faction: '部落', level: 10 } },
+    'warcraft', 0
+  );
+  assert.strictEqual(companions.length, 0, `count=0 时不生成 (实际 ${companions.length})`);
 });
 
 // === 结果 ===

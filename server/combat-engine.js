@@ -317,9 +317,9 @@ class CombatSession {
 
     const result = this.executeAction(participant, decision);
 
-    // 同步回 participant
-    participant.hp = companion.hp;
-    participant.mp = companion.mp;
+    // executeAction 修改了 participant，同步回 companion 实例
+    companion.hp = participant.hp;
+    companion.mp = participant.mp;
 
     return result;
   }

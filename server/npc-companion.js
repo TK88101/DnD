@@ -48,7 +48,8 @@ class NPCCompanion {
     this.hp = this._calcHP();
     this.maxHp = this.hp;
     this.ac = this._calcAC();
-    this.mp = calculateMP ? calculateMP(this.className, this.level, this.stats) : undefined;
+    const intMod = modifier(this.stats.INT || 10);
+    this.mp = calculateMP ? calculateMP(this.className, this.level, intMod) : undefined;
     this.maxMp = this.mp;
     this.skills = getSkillsForLevel(this.campaign, this.className, this.level);
     this.equipment = {
@@ -104,6 +105,11 @@ class NPCCompanion {
       `对话风格：${tLabel.dialogue}，${sLabel.dialogue}。`;
   }
 
+  // 战斗中使用的名字（带 [NPC] 前缀）
+  get combatName() {
+    return `[NPC]${this.name}`;
+  }
+
   // 战斗 AI：代码控制行动选择
   chooseCombatAction(combatState) {
     const { allies, enemies } = combatState;
@@ -120,9 +126,9 @@ class NPCCompanion {
     if (selfLow && this.stance <= 3) {
       // 自保：尝试治疗自己或防御
       const selfHeal = availableSkills.find(s => s.type === 'heal');
-      if (selfHeal) return { type: 'skill', skillName: selfHeal.name, target: this.name };
+      if (selfHeal) return { type: 'skill', skillName: selfHeal.name, target: this.combatName };
       const defend = availableSkills.find(s => s.type === 'defend');
-      if (defend) return { type: 'skill', skillName: defend.name, target: this.name };
+      if (defend) return { type: 'skill', skillName: defend.name, target: this.combatName };
     }
 
     if (allyInDanger && this.stance >= 7) {
@@ -168,7 +174,7 @@ class NPCCompanion {
     // 有 buff 就用
     if (this.temperament <= 4) {
       const defend = skills.find(s => s.type === 'defend');
-      if (defend) return { type: 'skill', skillName: defend.name, target: this.name };
+      if (defend) return { type: 'skill', skillName: defend.name, target: this.combatName };
     }
     return this._dpsAI(skills, enemies);
   }
@@ -274,7 +280,7 @@ class NPCCompanion {
     this.hp = this.maxHp;
     this.skills = getSkillsForLevel(this.campaign, this.className, this.level);
     if (calculateMP) {
-      this.maxMp = calculateMP(this.className, this.level, this.stats);
+      this.maxMp = calculateMP(this.className, this.level, modifier(this.stats.INT || 10));
       this.mp = this.maxMp;
     }
   }
@@ -362,19 +368,21 @@ function determineNeededRoles(playerClass, count) {
   const healers = ['牧師', '聖騎士', '薩滿', '德魯伊'];
   const dps = ['法師', '盜賊', '獵人', '術士', '薩滿', '戰士'];
 
+  if (count <= 0) return [];
+
   const needed = [];
   let hasTank = tanks.includes(playerClass);
   let hasHealer = healers.includes(playerClass);
 
-  // 先补坦克
-  if (!hasTank) {
+  // 先补坦克（如果 count 允许）
+  if (!hasTank && needed.length < count) {
     const tank = tanks[Math.floor(Math.random() * tanks.length)];
     needed.push(tank);
     if (healers.includes(tank)) hasHealer = true;
   }
 
-  // 再补治疗
-  if (!hasHealer) {
+  // 再补治疗（如果 count 允许）
+  if (!hasHealer && needed.length < count) {
     const healer = healers.filter(h => h !== playerClass && !needed.includes(h));
     needed.push(healer[Math.floor(Math.random() * healer.length)] || '牧師');
   }

@@ -806,11 +806,15 @@ async function triggerCombat(roomId, room, enemies) {
   const lang = room.lang || 'zh';
   const narrative = await generateNarrative(`戰鬥開始！先攻順序：${initText}`, lang);
 
-  // Execute any enemy turns that come before the first player
+  // Execute any enemy/NPC-companion turns that come before the first human player
   const allResults = [];
   let current = combat.getCurrentTurn();
-  while (current && current.side === 'enemy' && combat.isActive) {
-    allResults.push(combat.executeMonsterAI(current));
+  while (current && (current.side === 'enemy' || current.isNPC) && combat.isActive) {
+    if (current.side === 'enemy') {
+      allResults.push(combat.executeMonsterAI(current));
+    } else if (current.isNPC) {
+      allResults.push(combat.executeNPCCompanionAI(current));
+    }
     const end = combat.checkCombatEnd();
     if (end.ended) break;
     current = combat.advanceTurn();
@@ -1540,8 +1544,12 @@ wss.on('connection', (ws) => {
                   let endCheck = activeCombat.checkCombatEnd();
                   if (!endCheck.ended) {
                     let next = activeCombat.advanceTurn();
-                    while (next && next.side === 'enemy' && activeCombat.isActive) {
-                      allResults.push(activeCombat.executeMonsterAI(next));
+                    while (next && (next.side === 'enemy' || next.isNPC) && activeCombat.isActive) {
+                      if (next.side === 'enemy') {
+                        allResults.push(activeCombat.executeMonsterAI(next));
+                      } else if (next.isNPC) {
+                        allResults.push(activeCombat.executeNPCCompanionAI(next));
+                      }
                       endCheck = activeCombat.checkCombatEnd();
                       if (endCheck.ended) break;
                       next = activeCombat.advanceTurn();
