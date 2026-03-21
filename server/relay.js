@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { CharacterCreator, attackRoll, skillCheck, roll, modifier, d20 } = require('./game-engine');
+const { CharacterCreator, attackRoll, skillCheck, roll, modifier, d20, getSkillsForLevel, proficiencyBonus, calculateMP, SUMMONS } = require('./game-engine');
+const { CombatSession, EncounterGenerator } = require('./combat-engine');
+const { parseEnemiesFile } = require('./monster-parser');
 
 const PORT = process.env.PORT || 8080;
 const MULTIPLAYER_DIR = path.join(__dirname, '..', 'multiplayer');
@@ -235,6 +237,15 @@ class GameSession {
 ${systemPrompt}`
     });
     this.chat = model.startChat({ history: this.history });
+
+    // Load monster database for this campaign
+    if (!monsterDatabases.has(campaign)) {
+      const db = parseEnemiesFile(campaign);
+      if (db.size > 0) {
+        monsterDatabases.set(campaign, db);
+        console.log(`[怪物DB] ${campaign}: ${db.size} 種怪物已載入`);
+      }
+    }
   }
 
   async send(message) {
@@ -475,6 +486,8 @@ ${systemPrompt}`
 
 const gameSessions = new Map();
 const charCreators = new Map(); // roomId → CharacterCreator
+const monsterDatabases = new Map(); // campaign → Map<name, template>
+const activeCombats = new Map();    // roomId → CombatSession
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // 確保 multiplayer 目錄存在
@@ -632,6 +645,148 @@ function writeInbox(roomId, message) {
 function clearInbox(roomId) {
   const inboxPath = path.join(MULTIPLAYER_DIR, `inbox-${roomId}.json`);
   fs.writeFileSync(inboxPath, '[]', 'utf8');
+}
+
+// === 戰鬥引擎：Gemini 意圖解析 ===
+async function parsePlayerIntent(input, combatContext) {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const prompt = `你是指令解析器。把玩家的自然語言轉成JSON。只返回JSON，不要其他文字。
+
+可用行動類型：
+- skill: 使用技能（需要 skillName 和 target）
+- melee: 近戰武器攻擊（需要 target）
+- item: 使用物品（需要 itemName）
+- flee: 逃跑
+
+${combatContext}
+
+玩家輸入：「${input}」`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const text = result.response.text().trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    console.error('[意圖解析失敗]', e.message);
+  }
+  return null;
+}
+
+// === 戰鬥引擎：Gemini 敘事生成 ===
+async function generateNarrative(mechanicalResults, lang) {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const langInst = lang === 'en' ? 'in English' : lang === 'ja' ? '日本語で' : '用繁體中文';
+  const prompt = `你是戰鬥旁白。根據以下機械結果${langInst}寫2-3句沉浸式描述。不要改動數值。不要添加選項。只寫敘事。
+
+${mechanicalResults}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
+  } catch (e) {
+    console.error('[敘事生成失敗]', e.message);
+    return mechanicalResults;
+  }
+}
+
+// === 戰鬥引擎：狀態欄 + 選項列表 ===
+function buildCombatStatusBar(combat, currentPlayer) {
+  const players = combat.participants.filter(p => p.side === 'player');
+  const enemies = combat.participants.filter(p => p.side === 'enemy' && p.hp > 0);
+
+  let bar = '\n╔═══════════════════════════════════╗\n';
+  for (const p of players) {
+    const mpStr = p.mp !== undefined ? ` MP:${p.mp}/${p.maxMp}` : '';
+    bar += `║ ${p.name} HP:${p.hp}/${p.maxHp}${mpStr}\n`;
+  }
+  for (const s of (combat.summons || [])) {
+    bar += `║ 👹 ${s.name} HP:${s.hp}/${s.maxHp}\n`;
+  }
+  bar += '╠═══════════════════════════════════╣\n';
+  for (const e of enemies) {
+    const pct = Math.round(e.hp / e.maxHp * 100);
+    const warn = pct <= 20 ? ' ⚠️' : '';
+    bar += `║ ${e.name} HP:${e.hp}/${e.maxHp}${warn}\n`;
+  }
+  bar += '╠═══════════════════════════════════╣\n';
+
+  const actions = combat.getAvailableActions(currentPlayer);
+  let optNum = 1;
+  const options = {};
+  for (const a of actions) {
+    if ((a.type === 'skill' || a.type === 'melee') && a.targets && a.targets.length > 0) {
+      for (const t of a.targets) {
+        bar += `║ ${optNum}. ${a.desc} → ${t}\n`;
+        options[String(optNum)] = { ...a, target: t };
+        optNum++;
+      }
+    } else {
+      bar += `║ ${optNum}. ${a.desc}\n`;
+      options[String(optNum)] = a;
+      optNum++;
+    }
+  }
+  bar += '╚═══════════════════════════════════╝';
+
+  return { bar, options };
+}
+
+// === 戰鬥引擎：觸發戰鬥 ===
+async function triggerCombat(roomId, room, enemies) {
+  const players = [];
+  for (const [name, charData] of room.characters) {
+    const c = charData.character;
+    const intMod = modifier(c.stats?.INT || 10);
+    players.push({
+      name: charData.meta.name, type: 'player', playerName: name,
+      stats: c.stats, hp: parseInt(c.hp) || c.max_hp, maxHp: parseInt(c.max_hp) || c.hp,
+      ac: parseInt(c.ac) || 10, level: parseInt(c.level) || 1,
+      className: c.class, campaign: room.campaign,
+      skills: getSkillsForLevel(room.campaign, c.class, parseInt(c.level) || 1),
+      talents: c.talents || [],
+      equipment: c.equipment || {},
+      mp: calculateMP(c.class, parseInt(c.level) || 1, intMod),
+      maxMp: calculateMP(c.class, parseInt(c.level) || 1, intMod),
+      proficiency: proficiencyBonus(parseInt(c.level) || 1),
+    });
+  }
+
+  const playerCount = players.length;
+  const difficulty = CombatSession.getDifficulty(playerCount);
+  const combat = new CombatSession(players, enemies, difficulty);
+  const initResult = combat.initCombat();
+  activeCombats.set(roomId, combat);
+
+  const initText = initResult.order.map(p => `${p.name}(${p.initiative})`).join(' > ');
+  const lang = room.lang || 'zh';
+  const narrative = await generateNarrative(`戰鬥開始！先攻順序：${initText}`, lang);
+
+  // Execute any enemy turns that come before the first player
+  const allResults = [];
+  let current = combat.getCurrentTurn();
+  while (current && current.side === 'enemy' && combat.isActive) {
+    allResults.push(combat.executeMonsterAI(current));
+    const end = combat.checkCombatEnd();
+    if (end.ended) break;
+    current = combat.advanceTurn();
+  }
+
+  let output = `⚔️ ${narrative}\n`;
+  if (allResults.length > 0) {
+    const enemyNarrative = await generateNarrative(allResults.map(r => r.summary).join('\n'), lang);
+    output += `\n${enemyNarrative}\n`;
+  }
+
+  const firstPlayer = combat.getCurrentTurn();
+  if (firstPlayer && combat.isActive) {
+    const { bar, options } = buildCombatStatusBar(combat, firstPlayer);
+    combat._lastOptions = options;
+    output += bar;
+  }
+
+  broadcastAll(room, { type: 'game_output', content: output });
+  console.log(`[戰鬥] 房間 ${roomId}: 戰鬥開始，${enemies.length} 隻怪物`);
 }
 
 wss.on('connection', (ws) => {
@@ -1271,6 +1426,87 @@ wss.on('connection', (ws) => {
                     break;
                   }
                 }
+
+                // === 戰鬥引擎路由 ===
+                const activeCombat = activeCombats.get(roomId);
+                if (activeCombat && activeCombat.isActive) {
+                  const currentTurnParticipant = activeCombat.getCurrentTurn();
+
+                  let action = null;
+
+                  // Number → lookup option table
+                  if (/^\d+$/.test(actionTrimmed) && activeCombat._lastOptions) {
+                    action = activeCombat._lastOptions[actionTrimmed];
+                  }
+
+                  // Free text → Gemini intent parse
+                  if (!action) {
+                    const ctx = `敵人：${activeCombat.participants.filter(p=>p.side==='enemy'&&p.hp>0).map(p=>`${p.name}(HP${p.hp}/${p.maxHp})`).join('、')}\n技能：${(currentTurnParticipant.skills||[]).map(s=>s.name).join('、')}\n物品：使用物品\n其他：逃跑`;
+                    const intent = await parsePlayerIntent(actionTrimmed, ctx);
+                    if (intent && intent.actions) action = intent.actions[0];
+                    else if (intent && intent.type) action = intent;
+                  }
+
+                  if (!action) {
+                    ws.send(JSON.stringify({ type: 'game_output', content: '⚠ 無法理解指令，請選擇數字或描述你的行動。' }));
+                    break;
+                  }
+
+                  broadcastAll(currentRoom, { type: 'game_thinking', from: 'DM' });
+                  const combatResult = activeCombat.executeAction(currentTurnParticipant, action);
+                  const allResults = [combatResult];
+
+                  // Execute summon AI
+                  for (const summon of (activeCombat.summons || [])) {
+                    if (summon.hp > 0) allResults.push(activeCombat.executeSummonAI(summon));
+                  }
+
+                  // Advance turn and execute enemy/summon actions
+                  let endCheck = activeCombat.checkCombatEnd();
+                  if (!endCheck.ended) {
+                    let next = activeCombat.advanceTurn();
+                    while (next && next.side === 'enemy' && activeCombat.isActive) {
+                      allResults.push(activeCombat.executeMonsterAI(next));
+                      endCheck = activeCombat.checkCombatEnd();
+                      if (endCheck.ended) break;
+                      next = activeCombat.advanceTurn();
+                    }
+                  }
+
+                  // Generate narrative
+                  const mechanicalText = allResults.map(r => r.summary).filter(Boolean).join('\n');
+                  const lang = currentRoom.lang || 'zh';
+                  const narrative = await generateNarrative(mechanicalText, lang);
+
+                  let output = narrative + '\n';
+                  if (endCheck.ended) {
+                    if (endCheck.result === 'victory') {
+                      output += `\n🏆 戰鬥勝利！\nEXP +${endCheck.loot.exp}`;
+                      if (endCheck.loot.items.length > 0) output += `\n掉落：${endCheck.loot.items.map(i=>i.name).join('、')}`;
+                      output += '\n\n1. 繼續前進\n2. 調查周圍\n3. 使用物品';
+                    } else {
+                      output += '\n💀 戰鬥失敗...\n\n1. 復活（花費金幣）\n2. 讀取存檔';
+                    }
+                    activeCombats.delete(roomId);
+                    // Update game state
+                    if (session && session.gameState && endCheck.loot) {
+                      const oldExp = parseInt(session.gameState.exp) || 0;
+                      session.gameState.exp = String(oldExp + endCheck.loot.exp);
+                    }
+                  } else {
+                    const nextPlayer = activeCombat.getCurrentTurn();
+                    const { bar, options: opts } = buildCombatStatusBar(activeCombat, nextPlayer);
+                    activeCombat._lastOptions = opts;
+                    output += bar;
+                  }
+
+                  broadcastAll(currentRoom, { type: 'game_output', content: output });
+                  if (session) session.parseState(output);
+                  advanceTurn(currentRoom, roomId);
+                  console.log(`[戰鬥] 房間 ${roomId} — ${senderName}: ${actionTrimmed}`);
+                  break;
+                }
+                // === 戰鬥引擎路由結束，以下為正常 Gemini DM 流程 ===
 
                 const prompt = `[玩家 ${senderName}]: ${actionTrimmed}`;
                 console.log(`[收到] 房間 ${roomId} — ${senderName}: ${actionTrimmed}`);
