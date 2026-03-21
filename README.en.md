@@ -24,8 +24,11 @@ A browser-based multiplayer Dungeons & Dragons text RPG. Powered by Google Gemin
 - **Real-Time Multiplayer** — WebSocket connections, 1–8 players per room
 - **AI Dungeon Master** — Immersive narrative driven by Gemini 2.5 Flash
 - **Character Creation** — Race/class/stat allocation (MH simplified to weapon-select-and-play)
-- **D&D 5e Combat** — Full dice resolution, attack/skill/critical hit system
+- **Code-Controlled Combat Engine** — All dice rolls, damage, and HP handled by server code; Gemini only provides narrative
+- **Dual Input Mode** — Number options or free text (Gemini parses intent → code executes)
 - **MP Mana System** — Resource management for spellcasting classes
+- **9 Classes with Full Skill/Talent Trees** — 11 skills per class (Lv1-20) + 3 talent trees each
+- **Summon AI** — Imp, Voidwalker, and other summons act automatically
 - **Dynamic Difficulty** — Server code auto-scales monster stats based on party size
 - **External Memory** — Persistent game state, automatic conversation trimming, constant token usage
 - **Save/Load** — Save progress anytime, load across rooms to continue
@@ -78,8 +81,11 @@ Share the generated URL with friends to let them join.
 ```
 DnD/
 ├── server/
-│   ├── relay.js              # Main server (WebSocket + Gemini + game logic)
-│   ├── game-engine.js        # Character creation engine (dice/stats/class data)
+│   ├── relay.js              # Main server (WebSocket + Gemini + combat routing)
+│   ├── game-engine.js        # Character engine (dice/stats/skills/talents data)
+│   ├── combat-engine.js      # Combat engine (initiative/turns/AI/loot/encounters)
+│   ├── monster-parser.js     # Monster data parser (parses enemies.md)
+│   ├── tests/                # Test files
 │   └── public/
 │       └── index.html         # Browser client (terminal-style UI)
 ├── rules/
@@ -110,13 +116,15 @@ DnD/
 | `保存` / `存檔` | `save` | Save the game |
 | `結束遊戲` / `退出` | `quit` | Save and exit |
 | `雜貨店` / `/shop` | `/shop` | Open the shop (code-controlled) |
+| `/fight` | `/fight` | Trigger random combat (code-controlled) |
 | `/back` / `回來了` | `/back` | Cancel AFK status |
 | `Esc` | `Esc` | Boss key (toggle disguise screen) |
 
 ## 🏗️ Technical Highlights
 
-- **Gemini Untrusted Principle** — Leveling, shop, difficulty, and option numbering are all controlled by code, not AI
-- **Option Mapping** — Players input a number; code looks it up and sends the corresponding text command to Gemini
+- **Gemini Untrusted Principle** — Leveling, shop, difficulty, and combat resolution are all controlled by code; Gemini only narrates
+- **Combat Engine** — Code handles dice/damage/HP/loot; Gemini does intent parsing and narrative wrapping (two API calls)
+- **Option Mapping** — Number input → option lookup; free text → Gemini intent parsing → code execution
 - **External Memory** — Game state (HP/gold/items) is parsed from AI responses and injected into the next message
 - **Dynamic Difficulty** — Code calculates HP multipliers and attack modifiers based on party size
 - **Heartbeat Keep-Alive** — 15-second ping prevents Cloudflare's 90-second timeout from dropping the connection
