@@ -202,6 +202,14 @@ class MemoryEngine {
     const itemNames = text.matchAll(/[🟦🟩🟪🟧]\s*\*?\*?(.+?)\*?\*?[\s（(|]/g);
     for (const m of itemNames) entities.add(m[1].trim());
 
+    // 純文本：按常見虛詞/動詞分割，提取可能的名詞短語
+    // 用於匹配普通玩家輸入如「我要找費茲維克」「回十字路口」
+    const SPLIT_WORDS = /[我你他她它們们的了嗎吗呢吧啊在是和與与到去找要回買买賣卖看給给用把被讓让從从跟向對对比但又也都很太可以怎麼么什麼这那有沒没不能會会想购買买出现来來，。！？、\s]+/;
+    const segments = text.split(SPLIT_WORDS).filter(s => s.length >= 2 && s.length <= 10);
+    for (const seg of segments) {
+      entities.add(seg);
+    }
+
     return [...entities].filter(e => e.length > 1 && e.length < 20);
   }
 

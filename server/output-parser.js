@@ -84,8 +84,8 @@ function extractState(text) {
   const cartMatch = text.match(/力盡次數[：:]\s*(\d+)\s*\/\s*3/);
   if (cartMatch) state.cartCount = cartMatch[1];
 
-  // MH 專用：武器
-  const weaponMatch = text.match(/\[(.+?)\s+Lv/);
+  // MH 專用：武器（排除 [種族/職業] 格式）
+  const weaponMatch = text.match(/\[([^\[\]\/]+?)\s+Lv/);
   if (weaponMatch) state.weapon = weaponMatch[1];
 
   return state;
@@ -126,7 +126,7 @@ function detectEvents(text) {
     combat: !!(text.match(/\[BATTLE:/) || text.match(/戰鬥結束|擊殺|💀|勝利/)),
     quest: !!text.match(/✅|任務完成|獲得.*EXP/),
     levelUp: !!text.match(/升級|Lv\.?\d+\s*→\s*Lv\.?\d+|LEVEL UP/i),
-    death: !!text.match(/你倒下了|力盡|HP.*0\/|陣亡/),
+    death: !!text.match(/你倒下了|力盡|HP[：:\s]*0\/|陣亡/),
     npcMeet: !!text.match(/\[NPC\]|「.{5,}」/), // NPC 標記或長對話
     locationChange: !!text.match(/抵達|進入|來到|📍/),
     itemGet: !!text.match(/獲得[：:]|掉落[：:]/),
