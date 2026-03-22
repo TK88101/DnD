@@ -7,6 +7,8 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { CharacterCreator, attackRoll, skillCheck, roll, modifier, d20, getSkillsForLevel, proficiencyBonus, calculateMP, SUMMONS } = require('./game-engine');
 const { CombatSession, EncounterGenerator } = require('./combat-engine');
 const { parseEnemiesFile } = require('./monster-parser');
+const { NPCCompanion, generateCompanionParty } = require('./npc-companion');
+const { getDungeonDifficulty, DUNGEON_MODES, DUNGEON_TYPES, validateDungeonEntry, dungeonModeMenu, companionPartyInfo } = require('./dungeon-mode');
 
 const PORT = process.env.PORT || 8080;
 const MULTIPLAYER_DIR = path.join(__dirname, '..', 'multiplayer');
@@ -796,9 +798,21 @@ async function triggerCombat(roomId, room, enemies) {
     });
   }
 
+  // 副本模式下加入 NPC 队友
+  const npcCompanionInstances = room.npcCompanions || [];
+  for (const npc of npcCompanionInstances) {
+    players.push(npc.toCombatant());
+  }
+
   const playerCount = players.length;
-  const difficulty = CombatSession.getDifficulty(playerCount);
-  const combat = new CombatSession(players, enemies, difficulty);
+  // 副本模式使用专用难度表，野外使用通用难度表
+  const difficulty = room.dungeonMode
+    ? getDungeonDifficulty({ dungeonType: room.dungeonType || DUNGEON_TYPES.NORMAL, mode: room.dungeonMode, playerCount })
+    : CombatSession.getDifficulty(playerCount);
+  const combat = new CombatSession(players, enemies, difficulty, {
+    disableCoopMechanics: difficulty.disableCoopMechanics || false,
+    npcCompanions: npcCompanionInstances,
+  });
   const initResult = combat.initCombat();
   activeCombats.set(roomId, combat);
 
@@ -900,6 +914,8 @@ wss.on('connection', (ws) => {
           afkPlayers: new Set(), // 暫離的玩家
           lang: msg.lang || 'zh', // 語言設定
           playerColors: new Map(), // 玩家名 → 顏色CSS類
+          dungeonMode: null,       // 副本模式：null=野外, 'solo'/'npc_team'/'multiplayer'
+          npcCompanions: [],       // NPCCompanion 實例列表
         });
         ws.roomId = roomId;
         ws.isHost = true;
@@ -1114,6 +1130,80 @@ wss.on('connection', (ws) => {
             } catch (err) {
               const loadErrMsg = JSON.stringify({ type: 'game_output', content: `⚠ 讀取存檔失敗：${err.message}` });
               if (ws.readyState === WebSocket.OPEN) ws.send(loadErrMsg);
+            }
+          }
+          // === 進入副本模式 ===
+          else if (/^\/dungeon\s+(.+)$/i.test(actionTrimmed)) {
+            const dungeonMatch = actionTrimmed.match(/^\/dungeon\s+(.+)$/i);
+            const dungeonId = dungeonMatch[1].trim();
+            const dRoom = rooms.get(roomId);
+            if (!dRoom || !dRoom.campaign) break;
+
+            const humanCount = (dRoom.host ? 1 : 0) + dRoom.players.size;
+            const firstChar = dRoom.characters?.values()?.next()?.value;
+            const playerLevel = parseInt(firstChar?.character?.level) || 1;
+            const dungeonType = playerLevel >= 60 ? DUNGEON_TYPES.RAID : DUNGEON_TYPES.NORMAL;
+
+            if (humanCount === 1) {
+              // 单人：显示模式选择菜单
+              ws.pendingDungeon = { dungeonId, dungeonType, playerLevel };
+              ws.send(JSON.stringify({ type: 'game_output', content: dungeonModeMenu(dungeonId, dungeonType, playerLevel) }));
+            } else {
+              // 多人：直接进入多人模式
+              const validation = validateDungeonEntry({ dungeonType, mode: DUNGEON_MODES.MULTIPLAYER, playerCount: humanCount, playerLevel });
+              if (!validation.valid) {
+                ws.send(JSON.stringify({ type: 'game_output', content: `⚠ ${validation.errors.join('\n')}` }));
+              } else {
+                dRoom.dungeonMode = DUNGEON_MODES.MULTIPLAYER;
+                dRoom.dungeonType = dungeonType;
+                dRoom.npcCompanions = [];
+                const session = gameSessions.get(roomId);
+                if (session) session.loadDungeonContext(dungeonId);
+                broadcastAll(dRoom, { type: 'game_output', content: `⚔️ 以 ${humanCount} 人团队进入副本：${dungeonId}` });
+              }
+            }
+          }
+          // === 副本模式选择（响应菜单）===
+          else if (ws.pendingDungeon && /^[012]$/.test(actionTrimmed)) {
+            const { dungeonId, dungeonType, playerLevel } = ws.pendingDungeon;
+            const dRoom = rooms.get(roomId);
+            const choice = parseInt(actionTrimmed);
+
+            if (choice === 0) {
+              ws.pendingDungeon = null;
+              ws.send(JSON.stringify({ type: 'game_output', content: '已返回。' }));
+            } else {
+              let mode;
+              if (dungeonType === DUNGEON_TYPES.RAID) {
+                // 团本只能选 NPC 队友
+                mode = DUNGEON_MODES.NPC_TEAM;
+              } else {
+                mode = choice === 1 ? DUNGEON_MODES.SOLO : DUNGEON_MODES.NPC_TEAM;
+              }
+
+              const validation = validateDungeonEntry({ dungeonType, mode, playerCount: 1, playerLevel });
+              if (!validation.valid) {
+                ws.send(JSON.stringify({ type: 'game_output', content: `⚠ ${validation.errors.join('\n')}` }));
+              } else {
+                dRoom.dungeonMode = mode;
+                dRoom.dungeonType = dungeonType;
+
+                if (mode === DUNGEON_MODES.NPC_TEAM) {
+                  const firstChar = dRoom.characters?.values()?.next()?.value;
+                  if (firstChar) {
+                    dRoom.npcCompanions = generateCompanionParty(firstChar, dRoom.campaign, 4);
+                    ws.send(JSON.stringify({ type: 'game_output', content: companionPartyInfo(dRoom.npcCompanions) }));
+                  }
+                } else {
+                  dRoom.npcCompanions = [];
+                }
+
+                const session = gameSessions.get(roomId);
+                if (session) session.loadDungeonContext(dungeonId);
+                const modeLabel = mode === DUNGEON_MODES.SOLO ? '单人挑战' : 'NPC 队友';
+                broadcastAll(dRoom, { type: 'game_output', content: `⚔️ 以${modeLabel}模式进入副本：${dungeonId}` });
+              }
+              ws.pendingDungeon = null;
             }
           }
           // === 手動觸發戰鬥 ===
