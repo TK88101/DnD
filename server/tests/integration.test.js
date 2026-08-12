@@ -153,7 +153,7 @@ const combat6 = new CombatSession(
 );
 combat6.initCombat();
 const p6 = combat6.participants.find(p => p.name === '測試牧師');
-const healResult = combat6.executeAction(p6, { type: 'skill', skillName: '聖光術', target: '測試牧師' });
+const healResult = combat6.executeAction(p6, { type: 'skill', skillName: '治療術', target: '測試牧師' });
 console.log(`Heal: ${healResult.summary}`);
 assert.ok(p6.hp > 10, 'HP should increase after heal');
 

@@ -31,11 +31,19 @@ function loadGameContext(campaign) {
     if (fs.existsSync(path.join(GAME_DIR, ruleFile))) files.push(ruleFile);
 
     const campaignDir = `campaigns/${campaign}`;
-    const campaignFiles = ['world.md', 'races.md', 'backgrounds.md', 'classes.md',
-      'npcs.md', 'enemies.md', 'items.md', 'quests.md'];
+    const campaignFiles = ['canon.md', 'world.md', 'races.md', 'starting-zones.md', 'backgrounds.md', 'classes.md',
+      'npcs.md', 'enemies.md', 'items.md', 'tier-sets.md', 'quests.md'];
     for (const f of campaignFiles) {
       const fp = path.join(GAME_DIR, campaignDir, f);
       if (fs.existsSync(fp)) files.push(`${campaignDir}/${f}`);
+    }
+
+    // 副本資料是戰役內容的一部分；依檔名排序載入，避免 DM 在進入副本時自行編造首領。
+    const dungeonDir = path.join(GAME_DIR, campaignDir, 'dungeons');
+    if (fs.existsSync(dungeonDir)) {
+      for (const f of fs.readdirSync(dungeonDir).filter(name => /^[a-z0-9-]+\.md$/.test(name)).sort()) {
+        files.push(`${campaignDir}/dungeons/${f}`);
+      }
     }
   }
 
@@ -53,7 +61,7 @@ function loadGameContext(campaign) {
 function loadDungeon(campaign, dungeonId) {
   const dungeonDir = path.join(GAME_DIR, 'campaigns', campaign, 'dungeons');
   if (!fs.existsSync(dungeonDir)) return '';
-  const files = fs.readdirSync(dungeonDir).filter(f => f.endsWith('.md'));
+  const files = fs.readdirSync(dungeonDir).filter(f => /^[a-z0-9-]+\.md$/.test(f));
   for (const f of files) {
     if (f.replace('.md', '') === dungeonId) {
       return '\n\n=== 當前副本 ===\n' + fs.readFileSync(path.join(dungeonDir, f), 'utf8');
@@ -175,15 +183,16 @@ class GameSession {
       model: 'gemini-2.5-flash',
       systemInstruction: `你是一個龍與地下城（D&D）的地下城主（DM）。${langInst}
 
-【最重要規則】你必須 100% 嚴格按照下方提供的遊戲資料文件來運行遊戲。絕對不要自行編造種族、職業、技能、敵人、物品等數據。所有數據必須來自下方文件。如果文件中有12個種族，你就必須展示12個種族，一個都不能少，也不能改動屬性加成。
+【最重要規則】你必須嚴格按照下方提供的遊戲資料文件運行遊戲。不得自行編造種族、職業、技能、敵人或物品數據。魔獸戰役以 canon.md 為最高優先級；經典舊世只有8個可玩種族與9個職業，且開場必須服從角色存檔中的種族出生地。
 
 【格式規範】
 - 使用繁體中文
+- 不使用 emoji 或顏文字；狀態、擲骰、任務完成等資訊一律使用純文字標籤
 - 場景描述用沉浸式第二人稱
 - 戰鬥數據用格式化區塊
 - NPC對話用「」標記
 - 角色名字用 **角色名** 標記（粗體）
-- 每次掷骰顯示完整過程：🎲 d20(結果) + 加值 = 總計 vs 目標 → 結果
+- 每次擲骰顯示完整過程：[擲骰] d20(結果) + 加值 = 總計 vs 目標 → 結果
 - 每次回覆結尾顯示狀態欄
 - 【絕對規則 — 違反此規則等於系統崩潰】每一次回覆的最後幾行必須是編號選項（1、2、3...），無論任何情境都不例外。回覆的最後一行必須是一個編號選項，不能是描述文字。格式範例：
   1. 攻擊怪物
@@ -215,7 +224,7 @@ class GameSession {
 - 不能替換、不能跳號、不能混淆
 
 【任務與升級規則 — 必須嚴格執行】
-- 完成任務時必須立即顯示獎勵明細：「✅ 任務完成！獲得 [X] EXP、[Y]g、[物品名]」
+- 完成任務時必須立即顯示獎勵明細：「[任務完成] 獲得 [X] EXP、[Y]g、[物品名]」
 - 狀態欄必須顯示當前 EXP / 下一級所需 EXP（例如：EXP: 100/300）
 - 當累計 EXP 達到升級門檻時，必須立即觸發升級流程（擲 HP 骰、解鎖技能、天賦點等），不能跳過
 - 戰鬥結束後必須給予對應的 EXP（根據 enemies.md 中敵人的 EXP 值）
@@ -323,13 +332,13 @@ ${systemPrompt}`
     const acMatch = text.match(/AC:\s*(\d+)/);
     if (acMatch) state.ac = acMatch[1];
 
-    const goldMatch = text.match(/💰\s*(\d+)g/);
+    const goldMatch = text.match(/(?:💰\s*|金幣[:：]?\s*)(\d+)g/);
     if (goldMatch) state.gold = goldMatch[1];
 
     const expMatch = text.match(/EXP:\s*([\d,]+)\/([\d,]+)/);
     if (expMatch) { state.exp = expMatch[1]; state.expNext = expMatch[2]; }
 
-    const locMatch = text.match(/📍\s*(.+)/);
+    const locMatch = text.match(/(?:📍\s*|位置[:：]\s*)(.+)/);
     if (locMatch) state.location = locMatch[1].trim();
 
     const itemMatch = text.match(/物品：(.+)/);
@@ -347,7 +356,7 @@ ${systemPrompt}`
     const weaponMatch = text.match(/\[(.+?)\s+Lv/);
     if (weaponMatch) state.weapon = weaponMatch[1];
 
-    const nameMatch = text.match(/👤\s*(.+?)\s*\[/);
+    const nameMatch = text.match(/(?:👤\s*|角色[:：]\s*)(.+?)\s*\[/);
     if (nameMatch) state.name = nameMatch[1];
 
     this.gameState = state;
@@ -542,9 +551,21 @@ function generateRoomId() {
   return crypto.randomInt(100000, 999999).toString();
 }
 
+function stripEmoji(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/gu, '')
+    .replace(/[\uFE0E\uFE0F\u20E3]/g, '')
+    .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, '')
+    .replace(/[ \t]+\n/g, '\n');
+}
+
 // 廣播消息給房間所有人
 function broadcastAll(room, msgObj) {
-  const data = JSON.stringify(msgObj);
+  const outgoing = room.campaign === 'warcraft' && msgObj.type === 'game_output'
+    ? { ...msgObj, content: stripEmoji(msgObj.content) }
+    : msgObj;
+  const data = JSON.stringify(outgoing);
   if (room.host && room.host.readyState === WebSocket.OPEN) room.host.send(data);
   room.players.forEach(pw => { if (pw.readyState === WebSocket.OPEN) pw.send(data); });
 }
@@ -722,7 +743,7 @@ ${combatContext}
 async function generateNarrative(mechanicalResults, lang) {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const langInst = lang === 'en' ? 'in English' : lang === 'ja' ? '日本語で' : '用繁體中文';
-  const prompt = `你是戰鬥旁白。根據以下機械結果${langInst}寫2-3句沉浸式描述。不要改動數值。不要添加選項。只寫敘事。
+  const prompt = `你是戰鬥旁白。根據以下機械結果${langInst}寫2-3句沉浸式描述。不要改動數值。不要添加選項。不要使用 emoji 或顏文字。只寫敘事。
 
 ${mechanicalResults}`;
 
@@ -1482,8 +1503,11 @@ wss.on('connection', (ws) => {
                       charSummary += `職業：${char.character.class}\n`;
                       charSummary += `等級：1\n`;
                       charSummary += `HP：${char.character.hp}/${char.character.max_hp} | AC：${char.character.ac}\n`;
-                      charSummary += `裝備：${char.character.inventory.join('、')}\n\n`;
+                      charSummary += `裝備：${char.character.inventory.join('、')}\n`;
+                      charSummary += `起始位置：${char.progress.current_location}\n`;
+                      charSummary += `起始任務：${char.progress.main_quest || '依種族起始區域安排'}\n\n`;
                     }
+                    charSummary += `請嚴格從每名角色記錄的起始位置展示開場，不得以陣營預設地點覆蓋種族出生地。若多人角色的起始位置不同，先分別描述，再安排符合世界觀的會合。\n`;
                     charSummary += `請展示起始場景，開始冒險！\n`;
 
                     const session = gameSessions.get(roomId);
@@ -1558,9 +1582,11 @@ wss.on('connection', (ws) => {
                       charSummary += `等級：1\n`;
                       charSummary += `HP：${char.character.hp}/${char.character.max_hp} | AC：${char.character.ac}\n`;
                       charSummary += `STR:${char.character.stats.STR} DEX:${char.character.stats.DEX} CON:${char.character.stats.CON} INT:${char.character.stats.INT} WIS:${char.character.stats.WIS} CHA:${char.character.stats.CHA}\n`;
-                      charSummary += `裝備：${char.character.inventory.join('、')}\n\n`;
+                      charSummary += `裝備：${char.character.inventory.join('、')}\n`;
+                      charSummary += `起始位置：${char.progress.current_location}\n`;
+                      charSummary += `起始任務：${char.progress.main_quest || '依種族起始區域安排'}\n\n`;
                     }
-                    charSummary += `起始位置：${[...currentRoom.characters.values()][0].progress.current_location}\n\n`;
+                    charSummary += `請嚴格從每名角色記錄的起始位置展示開場，不得以陣營預設地點覆蓋種族出生地。若多人角色的起始位置不同，先分別描述，再安排符合世界觀的會合。\n\n`;
                     charSummary += `請展示起始場景，開始冒險！用沉浸式第二人稱叙事。描述每位隊員的位置和外觀。\n`;
                     charSummary += `【重要】這是多人遊戲，每次回覆結尾請指定下一個應該行動的玩家。`;
 

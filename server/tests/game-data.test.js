@@ -1,4 +1,4 @@
-const { SKILLS, TALENTS, SUMMONS, calculateMP, getSkillsForLevel } = require('../game-engine');
+const { CharacterCreator, RACES, SKILLS, TALENTS, SUMMONS, calculateMP, getSkillsForLevel } = require('../game-engine');
 const assert = require('assert');
 
 // Skills
@@ -45,5 +45,31 @@ const mp = calculateMP('術士', 4, 3);
 assert.strictEqual(mp, 15 + (4-1)*5 + 3*2, 'MP formula: base + (lv-1)*5 + intMod*2');
 assert.strictEqual(calculateMP('戰士', 5, 0), 0, 'Warriors have no MP');
 console.log('calculateMP: correct');
+
+// Race-specific starting locations
+const expectedStartingLocations = {
+  '1': '北郡山谷·北郡修道院',
+  '2': '丹莫羅·寒脊山谷',
+  '3': '泰達希爾·幽影谷',
+  '4': '丹莫羅·寒脊山谷',
+  '7': '杜隆塔爾·試煉谷',
+  '8': '莫高雷·納拉其營地',
+  '9': '杜隆塔爾·試煉谷',
+  '10': '提瑞斯法林地·喪鐘鎮',
+};
+assert.strictEqual(Object.keys(RACES.warcraft).length, 8, 'Classic 1.12 should expose exactly eight playable races');
+for (const [raceId, location] of Object.entries(expectedStartingLocations)) {
+  assert.strictEqual(RACES.warcraft[raceId].startLocation, location, `${RACES.warcraft[raceId].name} starting location`);
+}
+
+const undeadCreator = new CharacterCreator('test-player', 'warcraft', '部落');
+undeadCreator.process('10');
+undeadCreator.process('1');
+undeadCreator.process('8 8 8 8 8 8');
+const undeadResult = undeadCreator.process('測試亡靈');
+assert.ok(undeadResult.done, 'Undead character creation should complete');
+assert.strictEqual(undeadResult.character.progress.current_location, '提瑞斯法林地·喪鐘鎮');
+assert.strictEqual(undeadResult.character.progress.main_quest, 'MQ01-UD');
+console.log('race-specific starting locations: correct');
 
 console.log('All game-data tests passed!');

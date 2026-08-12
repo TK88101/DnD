@@ -56,6 +56,7 @@ const PROMPT_MODULES = [
 - NPC 對話用「」標記
 - 角色名字用 **角色名** 粗體標記
 - NPC 隊友名字前加 [NPC] 前綴
+- 不使用 emoji 或顏文字；所有資訊使用純文字標籤
 - 絕對不要擅自修改玩家的名字`
   },
 
@@ -82,8 +83,8 @@ const PROMPT_MODULES = [
 - 狀態欄必須顯示完整的物品清單，獲得或消耗後立即更新
 - 法術型職業必須顯示 MP
 - 格式範例：
-  👤 角色名 [種族/職業] Lv5 | HP: 25/30 | AC: 14 | 💰 50g
-  EXP: 200/500 | 📍 十字路口
+  角色：角色名 [種族/職業] Lv5 | HP: 25/30 | AC: 14 | 金幣：50g
+  EXP: 200/500 | 位置：十字路口
   裝備：鐵劍(1d8) | 物品：治療藥水x2`
   },
 
@@ -107,7 +108,7 @@ const PROMPT_MODULES = [
     weight: 8,
     condition: () => true,
     content: () => `【任務與升級規則】
-- 完成任務時立即顯示獎勵明細：✅ 任務完成！獲得 [X] EXP、[Y]g、[物品名]
+- 完成任務時立即顯示獎勵明細：[任務完成] 獲得 [X] EXP、[Y]g、[物品名]
 - 狀態欄顯示 EXP / 下一級所需 EXP
 - EXP 達標時立即觸發升級流程（擲 HP 骰、解鎖技能、天賦點）
 - 完成任務後根據 quests.md 的「後續」欄位引導下一任務
@@ -136,9 +137,12 @@ const PROMPT_MODULES = [
   {
     id: 'campaign-warcraft',
     category: 'campaign',
-    weight: 6,
+    weight: 10,
     condition: (ctx) => ctx.campaign === 'warcraft',
     content: () => `【魔獸戰役專屬規則】
+- canon.md 是最高優先級設定；其他文件衝突時一律以 canon.md 為準
+- 世界狀態固定為經典舊世 1.12：只有 8 個可玩種族與 9 個職業，不得混入後續資料片的種族、職業、領袖狀態或副本版本
+- 開場必須讀取每名角色的 progress.current_location 與 progress.main_quest，不得用陣營通用出生地覆蓋種族出生地
 - 職業技能和天賦嚴格按 classes.md 執行，基於經典舊世 1.12 版本
 - 召喚物（小鬼/虛空行者等）在玩家回合自動行動，不佔玩家動作
 - 套裝效果按 tier-sets.md 中的件數觸發
